@@ -2,7 +2,7 @@
 
 Module: `github.com/CWBudde/go-cma-es`
 Package: `cmaes` (flat, at the repository root)
-Status: **Phase 0 complete.** The algorithm is not implemented. Nothing is released.
+Status: **Phase 1 complete.** The algorithm is not implemented. Nothing is released.
 
 This document is the roadmap and the single source of truth for progress. It is organised
 the same way as the sibling [Mayfly](https://github.com/cwbudde/mayfly) and
@@ -161,22 +161,22 @@ build until Phase 1 landed.
 
 ## Phase 1 — Types, config, and the public surface
 
-- [ ] `types.go`: `ObjectiveFunction`, `ConstraintFunction`, `Best`, `Result`,
+- [x] `types.go`: `ObjectiveFunction`, `ConstraintFunction`, `Best`, `Result`,
       `TerminationReason` (`maximum_iterations`, `maximum_evaluations`, `target_cost`,
       `stagnation`, `tol_x`, `tol_fun`, `condition_number`, `no_effect_axis`,
       `no_effect_coord`)
-- [ ] `types.go`: `Config` with `ObjectiveFunc`, `Rand`, `Seed`, `Convergence`,
+- [x] `types.go`: `Config` with `ObjectiveFunc`, `Rand`, `Seed`, `Convergence`,
       `Constraints`, `BoundaryMethod`, `CovarianceMode`, `ProblemSize`, `LowerBound`,
       `UpperBound`, `InitialMean`, `InitialSigma`, `Lambda`, `Mu`, `MaxIterations`,
       `MaxEvaluations`, `MaxWorkers`, `ActiveCMA`, `EnableParallel`
-- [ ] `config.go`: `NewDefaultConfig` with Hansen's defaults — `λ = 4 + floor(3·ln n)`,
+- [x] `config.go`: `NewDefaultConfig` with Hansen's defaults — `λ = 4 + floor(3·ln n)`,
       `µ = floor(λ/2)`, log-decreasing weights, `µ_eff`, `c_σ`, `d_σ`, `c_c`, `c_1`, `c_µ`
-- [ ] `config.go`: `NewSeparableConfig`, `NewHighDimensionalConfig`,
+- [x] `config.go`: `NewSeparableConfig`, `NewHighDimensionalConfig`,
       `NewFastConvergenceConfig`
-- [ ] `config.go`: `Validate()` — reject non-positive `InitialSigma`, `Lambda < 2`,
+- [x] `config.go`: `Validate()` — reject non-positive `InitialSigma`, `Lambda < 2`,
       `Mu > Lambda`, mismatched `InitialMean` length, non-finite bounds
-- [ ] `config_loader.go` + tests: JSON round-trip
-- [ ] Table-driven test of the derived parameters against published values for
+- [x] `config_loader.go` + tests: JSON round-trip
+- [x] Table-driven test of the derived parameters against published values for
       n ∈ {2, 10, 56, 100}
 
 **Rationale**: The parameter formulas are where CMA-ES implementations most often go

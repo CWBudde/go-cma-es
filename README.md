@@ -6,8 +6,9 @@ Strategy** (CMA-ES), following Hansen's tutorial (arXiv:1604.00772).
 Third in a family with [Mayfly](https://github.com/cwbudde/mayfly) and
 [Dragonfly](https://github.com/CWBudde/dragonfly), and deliberately unlike both of them.
 
-> **Status: under construction.** Phase 0 (scaffolding) is complete; the algorithm is not
-> implemented yet. [`PLAN.md`](PLAN.md) is the source of truth for progress.
+> **Status: under construction.** Phase 1 (public types and configuration) is complete;
+> the algorithm is not implemented yet. [`PLAN.md`](PLAN.md) is the source of truth for
+> progress.
 
 ## Why
 
@@ -59,16 +60,22 @@ import "github.com/CWBudde/go-cma-es"
 
 ## Usage
 
-Not yet available — the public API lands in PLAN.md Phase 1. It will follow the sibling
-libraries' shape:
+The configuration API is available; the `Optimize` entry points land in PLAN.md Phase 3.
+Configurations are dimension-aware because Hansen's population and learning parameters
+depend on the problem size:
 
 ```go
-config := cmaes.NewDefaultConfig()
-config.ObjectiveFunc = cmaes.Rosenbrock
-config.ProblemSize = 10
+config := cmaes.NewDefaultConfig(10)
+config.ObjectiveFunc = func(x []float64) float64 {
+	var cost float64
+	for _, value := range x {
+		cost += value * value
+	}
+	return cost
+}
 config.LowerBound, config.UpperBound = -5, 5
 
-result, err := cmaes.Optimize(config)
+err := config.Validate()
 ```
 
 ## Development

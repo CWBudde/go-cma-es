@@ -18,6 +18,8 @@ refuse to resume across it.
 - Repository scaffolding: module `github.com/CWBudde/go-cma-es`, package `cmaes`, the
   pinned formatter/linter toolchain, CI gates, and `PLAN.md` (Phase 0).
 - `Version`, for a consumer's checkpoint and resume guard.
+- Public CMA-ES types, dimension-aware configuration presets, Hansen parameter
+  derivation, validation, and strict JSON configuration persistence (Phase 1).
 
 ### Fixed
 
