@@ -6,8 +6,8 @@ Strategy** (CMA-ES), following Hansen's tutorial (arXiv:1604.00772).
 Third in a family with [Mayfly](https://github.com/cwbudde/mayfly) and
 [Dragonfly](https://github.com/CWBudde/dragonfly), and deliberately unlike both of them.
 
-> **Status: under construction.** Phase 1 (public types and configuration) is complete;
-> the algorithm is not implemented yet. [`PLAN.md`](PLAN.md) is the source of truth for
+> **Status: under construction.** Phase 2 (linear algebra) is complete; the algorithm is
+> not implemented yet. [`PLAN.md`](PLAN.md) is the source of truth for
 > progress.
 
 ## Why

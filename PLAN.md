@@ -2,7 +2,7 @@
 
 Module: `github.com/CWBudde/go-cma-es`
 Package: `cmaes` (flat, at the repository root)
-Status: **Phase 1 complete.** The algorithm is not implemented. Nothing is released.
+Status: **Phase 2 complete.** The algorithm is not implemented. Nothing is released.
 
 This document is the roadmap and the single source of truth for progress. It is organised
 the same way as the sibling [Mayfly](https://github.com/cwbudde/mayfly) and
@@ -188,15 +188,15 @@ phases later.
 
 ## Phase 2 — Linear algebra (standard library only)
 
-- [ ] `eigen.go`: cyclic **Jacobi eigenvalue algorithm** for real symmetric matrices,
+- [x] `eigen.go`: cyclic **Jacobi eigenvalue algorithm** for real symmetric matrices,
       returning eigenvalues and orthonormal eigenvectors
-- [ ] `eigen.go`: enforce symmetry (`C := (C + Cᵀ)/2`) and floor negative eigenvalues
+- [x] `eigen.go`: enforce symmetry (`C := (C + Cᵀ)/2`) and floor negative eigenvalues
       before the square root — the two guards every production CMA-ES carries
-- [ ] `eigen_test.go`: reconstruction `B·diag(D)·Bᵀ ≈ C` to 1e-12; orthonormality
+- [x] `eigen_test.go`: reconstruction `B·diag(D)·Bᵀ ≈ C` to 1e-12; orthonormality
       `BᵀB ≈ I`; known-answer cases (diagonal, 2×2 rotation, Hilbert 6×6); an
       ill-conditioned input; the `n = 1` edge case
-- [ ] `matrix.go`: symmetric rank-one update, matrix-vector product, condition number
-- [ ] Benchmark the decomposition at n = 56, 200, 1000; record it in `docs/eigen-cost.md`
+- [x] `matrix.go`: symmetric rank-one update, matrix-vector product, condition number
+- [x] Benchmark the decomposition at n = 56, 200, 1000; record it in `docs/eigen-cost.md`
 
 **Rationale**: This is the only genuinely non-obvious numerics in the library, and it is
 where the standard-library-only constraint bites. Building it standalone and provably

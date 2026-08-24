@@ -20,6 +20,8 @@ refuse to resume across it.
 - `Version`, for a consumer's checkpoint and resume guard.
 - Public CMA-ES types, dimension-aware configuration presets, Hansen parameter
   derivation, validation, and strict JSON configuration persistence (Phase 1).
+- A dependency-free cyclic Jacobi eigendecomposition, covariance matrix helpers,
+  numerical reference tests, and recorded scaling benchmarks (Phase 2).
 
 ### Fixed
 

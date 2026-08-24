@@ -18,8 +18,8 @@ optimization library, and the third in a family with
 | **block-CMA-ES** | Same, block-structured parameters         | `CovarianceMode = "block"`     |
 | **IPOP / BIPOP** | Multimodal, restart strategies            | `OptimizeWithRestarts`         |
 
-**Current status**: nothing is released. **Phase 1 (public types and configuration) is
-complete**; the algorithm is not implemented yet.
+**Current status**: nothing is released. **Phase 2 (linear algebra) is complete**; the
+algorithm is not implemented yet.
 
 **PLAN.md is the single source of truth for progress.** Before starting work, read
 PLAN.md and check which boxes are ticked. Do not infer status from this file or from
@@ -77,6 +77,7 @@ corresponding phase is complete.
 | `types.go`       | `Config`, `Result`, `Best`, `TerminationReason`                 |
 | `config.go`      | `NewDefaultConfig` and preset factories, Hansen's parameter set |
 | `eigen.go`       | cyclic Jacobi eigendecomposition for real symmetric matrices    |
+| `matrix.go`      | dense matrix helpers used by covariance adaptation              |
 | `cmaes.go`       | the strategy itself: sampling, recombination, CSA, C update     |
 | `boundary.go`    | box handling; `constraints.go` for Deb rules and penalties      |
 | `convergence.go` | the stopping criteria; `lifecycle.go` for observers and options |
