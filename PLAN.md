@@ -2,7 +2,7 @@
 
 Module: `github.com/CWBudde/go-cma-es`
 Package: `cmaes` (flat, at the repository root)
-Status: **Phase 2 complete.** The algorithm is not implemented. Nothing is released.
+Status: **Phase 3 complete.** Full-covariance CMA-ES is implemented. Nothing is released.
 
 This document is the roadmap and the single source of truth for progress. It is organised
 the same way as the sibling [Mayfly](https://github.com/cwbudde/mayfly) and
@@ -209,16 +209,16 @@ should be free, and the n = 1000 figure locates the point where sep-CMA becomes 
 
 ## Phase 3 — Core CMA-ES
 
-- [ ] `cmaes.go`: state — mean `m`, step size `σ`, covariance `C`, `B`, `D`, evolution
+- [x] `cmaes.go`: state — mean `m`, step size `σ`, covariance `C`, `B`, `D`, evolution
       paths `p_σ` and `p_c`, `eigenEval` counter
-- [ ] Sampling `x_k = m + σ·B·D·z_k`
-- [ ] Selection and weighted recombination of the µ best
-- [ ] `p_σ` update and cumulative step-size adaptation
-- [ ] `p_c` update with the Heaviside `h_σ` correction
-- [ ] Rank-one and rank-µ covariance update
-- [ ] Lazy eigendecomposition on the published staleness trigger
-- [ ] `Optimize(config) (*Result, error)` and `OptimizeContext(ctx, config, ...RunOption)`
-- [ ] `cmaes_test.go`: sphere below 1e-10; **ellipsoid at condition 1e6**; Rosenbrock
+- [x] Sampling `x_k = m + σ·B·D·z_k`
+- [x] Selection and weighted recombination of the µ best
+- [x] `p_σ` update and cumulative step-size adaptation
+- [x] `p_c` update with the Heaviside `h_σ` correction
+- [x] Rank-one and rank-µ covariance update
+- [x] Lazy eigendecomposition on the published staleness trigger
+- [x] `Optimize(config) (*Result, error)` and `OptimizeContext(ctx, config, ...RunOption)`
+- [x] `cmaes_test.go`: sphere below 1e-10; **ellipsoid at condition 1e6**; Rosenbrock
       n = 10 below 1e-6; identical seeds are bit-identical; `Result.FuncEvalCount` matches
       a counting objective
 

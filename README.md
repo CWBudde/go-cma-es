@@ -6,9 +6,9 @@ Strategy** (CMA-ES), following Hansen's tutorial (arXiv:1604.00772).
 Third in a family with [Mayfly](https://github.com/cwbudde/mayfly) and
 [Dragonfly](https://github.com/CWBudde/dragonfly), and deliberately unlike both of them.
 
-> **Status: under construction.** Phase 2 (linear algebra) is complete; the algorithm is
-> not implemented yet. [`PLAN.md`](PLAN.md) is the source of truth for
-> progress.
+> **Status: under construction.** Phase 3 provides passive, full-covariance CMA-ES.
+> Boundary handling, convergence criteria, active CMA, and covariance variants remain
+> later phases. [`PLAN.md`](PLAN.md) is the source of truth for progress.
 
 ## Why
 
@@ -60,7 +60,6 @@ import "github.com/CWBudde/go-cma-es"
 
 ## Usage
 
-The configuration API is available; the `Optimize` entry points land in PLAN.md Phase 3.
 Configurations are dimension-aware because Hansen's population and learning parameters
 depend on the problem size:
 
@@ -75,8 +74,16 @@ config.ObjectiveFunc = func(x []float64) float64 {
 }
 config.LowerBound, config.UpperBound = -5, 5
 
-err := config.Validate()
+result, err := cmaes.Optimize(config)
+if err != nil {
+	log.Fatal(err)
+}
+fmt.Printf("best cost: %g\n", result.GlobalBest.Cost)
 ```
+
+The bounds are validated now but applied starting in Phase 4. Until then, use the Phase 3
+entry point for unconstrained objectives whose useful search region lies comfortably
+inside the configured finite bounds.
 
 ## Development
 

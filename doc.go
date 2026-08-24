@@ -1,5 +1,5 @@
 // Package cmaes implements the Covariance Matrix Adaptation Evolution Strategy
-// (CMA-ES) for bounded continuous minimization.
+// (CMA-ES) for continuous minimization.
 //
 // CMA-ES differs from the swarm metaheuristics in the sibling Mayfly and
 // Dragonfly libraries in the one respect that matters on ill-conditioned
@@ -9,10 +9,9 @@
 // A swarm with an isotropic, externally scheduled step size needs O(cond)
 // evaluations on a conditioned ellipsoid where CMA-ES needs O(log cond).
 //
-// It also controls its own step size by cumulative step-size adaptation, and
-// terminates on a set of criteria derived from the distribution's own state
-// (TolX, TolFun, condition number, no-effect axes). A run therefore reports that
-// it has converged instead of continuing to spend evaluations at zero velocity.
+// It also controls its own step size by cumulative step-size adaptation. The
+// distribution-derived convergence criteria (TolX, TolFun, condition number,
+// no-effect axes) are part of the planned convergence layer.
 //
 // The implementation follows Hansen, N. (2016), "The CMA Evolution Strategy: A
 // Tutorial", arXiv:1604.00772, and cross-checks against the reference
@@ -21,9 +20,9 @@
 //
 // # Status
 //
-// This package is under construction. PLAN.md in the repository root is the
-// single source of truth for what is implemented; do not infer status from this
-// comment.
+// This package is under construction. The passive full-covariance strategy is
+// implemented; PLAN.md in the repository root is the single source of truth
+// for later boundary, convergence, and variant work.
 //
 // # Conventions
 //

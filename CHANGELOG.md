@@ -22,6 +22,10 @@ refuse to resume across it.
   derivation, validation, and strict JSON configuration persistence (Phase 1).
 - A dependency-free cyclic Jacobi eigendecomposition, covariance matrix helpers,
   numerical reference tests, and recorded scaling benchmarks (Phase 2).
+- The passive full-covariance CMA-ES strategy: sampling, weighted recombination,
+  cumulative step-size adaptation, evolution paths, rank-one and rank-µ covariance
+  updates, lazy eigendecomposition, deterministic parallel evaluation, and the
+  `Optimize` and `OptimizeContext` entry points (Phase 3).
 
 ### Fixed
 

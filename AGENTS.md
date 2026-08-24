@@ -18,8 +18,8 @@ optimization library, and the third in a family with
 | **block-CMA-ES** | Same, block-structured parameters         | `CovarianceMode = "block"`     |
 | **IPOP / BIPOP** | Multimodal, restart strategies            | `OptimizeWithRestarts`         |
 
-**Current status**: nothing is released. **Phase 2 (linear algebra) is complete**; the
-algorithm is not implemented yet.
+**Current status**: nothing is released. **Phase 3 (core CMA-ES) is complete**; boundary
+handling, convergence criteria, and algorithm variants are not implemented yet.
 
 **PLAN.md is the single source of truth for progress.** Before starting work, read
 PLAN.md and check which boxes are ticked. Do not infer status from this file or from
