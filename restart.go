@@ -84,8 +84,8 @@ type restartRunPlan struct {
 // OptimizeWithRestarts runs IPOP- or BIPOP-CMA-ES with a background context.
 // Config.MaxEvaluations is the shared budget across all runs and must be
 // positive. A target-cost termination ends the complete schedule immediately;
-// other completed-run termination criteria start a fresh run while at least
-// two evaluations remain.
+// other completed-run termination criteria start a fresh run for as long as any
+// budget remains, down to a final single-evaluation run.
 func OptimizeWithRestarts(
 	config *Config,
 	strategy RestartStrategy,
@@ -167,7 +167,7 @@ func OptimizeWithRestartsContext(
 		planningBudget := max(2, remaining)
 		plan := schedule.next(config, planningBudget, rng)
 		plan.budget = min(plan.budget, remaining)
-		runConfig := restartConfig(config, plan, len(result.Restarts), seed, rng)
+		runConfig := restartConfig(config, plan, len(result.Restarts), rng)
 		perRunOptions := restartOptions(resolved, runConfig, len(result.Restarts))
 
 		if remaining == 1 {
@@ -281,9 +281,17 @@ func (schedule *restartSchedule) nextSmall(
 	rng *rand.Rand,
 ) restartRunPlan {
 	// Hansen's BIPOP schedule samples logarithmically between the base
-	// population and the next IPOP population, with a squared uniform exponent
-	// to favor genuinely small runs.
-	exponent := float64(schedule.largeRuns) * math.Pow(rng.Float64(), 2)
+	// population and *half* the next IPOP population, with a squared uniform
+	// exponent to favor genuinely small runs:
+	//
+	//	lambda_small = lambda_base * (0.5 * lambda_large / lambda_base)^U^2
+	//
+	// with lambda_large = lambda_base * 2^largeRuns, so the exponent is
+	// (largeRuns - 1) * U^2. Dropping the halving would let a small run be
+	// drawn at the full large-regime population, which is the one thing the
+	// second budget account exists to prevent. nextSmall is only reached once
+	// a large run has completed, so the exponent never goes negative.
+	exponent := float64(schedule.largeRuns-1) * math.Pow(rng.Float64(), 2)
 	lambda := int(float64(schedule.baseLambda) * math.Pow(2, exponent))
 	lambda = min(max(schedule.baseLambda, lambda), remaining)
 
@@ -333,7 +341,6 @@ func restartConfig(
 	config *Config,
 	plan restartRunPlan,
 	restart int,
-	firstSeed int64,
 	rng *rand.Rand,
 ) *Config {
 	runConfig := *config
@@ -351,12 +358,11 @@ func restartConfig(
 	}
 
 	if config.Rand == nil {
-		runSeed := int64(0)
-		if restart == 0 {
-			runSeed = firstSeed
-		} else {
-			runSeed = rng.Int63()
-		}
+		// Every run, the first included, draws its seed from the schedule's own
+		// generator. Handing run 0 the seed that generator was constructed from
+		// would make it replay that stream from position 0, correlating its
+		// samples with every scheduling draw taken afterwards.
+		runSeed := rng.Int63()
 
 		runConfig.Seed = &runSeed
 		runConfig.Rand = nil

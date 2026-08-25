@@ -51,7 +51,6 @@ type candidate struct {
 	evaluationX         []float64
 	cost                float64
 	constraintViolation float64
-	boundaryDistance    float64
 	boundaryPenalty     float64
 	evaluated           bool
 }

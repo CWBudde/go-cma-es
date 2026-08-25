@@ -12,8 +12,9 @@ import (
 // objective was evaluated, and covariance adaptation follows the sampled step
 // because that is what the distribution actually produced. BoundaryPenalty
 // instead keeps the genotype untouched and stores a smoothly transformed
-// phenotype for evaluation, recording how far outside the box the genotype
-// itself lies.
+// phenotype for evaluation. How far outside the box the genotype itself lies is
+// not recorded here: boundaryPenaltyState.assign measures it once the weights
+// for the generation are known.
 //
 // Every branch resolves the box one coordinate at a time through
 // coordinateBounds, because Hansen's transformation is defined per coordinate:
@@ -36,9 +37,6 @@ func applyBoundaryHandling(population []candidate, state *strategyState, config 
 			for coordinate, value := range current.x {
 				lower, upper := coordinateBounds(config, coordinate)
 				current.evaluationX[coordinate] = transformBounded(value, lower, upper)
-
-				deviation := outOfBoxDeviation(value, lower, upper)
-				current.boundaryDistance += deviation * deviation
 			}
 		}
 	}

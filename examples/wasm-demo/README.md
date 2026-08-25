@@ -10,8 +10,8 @@ compiled to `js/wasm`, with plain JavaScript and canvas as the display layer:
   weighted search, using the same seed, Gaussian draw order, λ, σ₀, and evaluation budget.
 - **`charts.html` — Telemetry.** Global and per-generation best cost, σ, and covariance
   condition number under one replay cursor.
-- **`restart.html` — Restart Map.** Demo-layer IPOP orchestration: ordinary CMA-ES runs
-  with λ doubling between runs, with each Rastrigin winner and nearest basin marked.
+- **`restart.html` — Restart Map.** The public IPOP restart API doubles λ between runs,
+  with each Rastrigin winner and nearest basin marked.
 
 The organizing rule, inherited from the Mayfly and Dragonfly demos, is that **no
 optimization logic lives in JavaScript**. Go evaluates the landscapes and performs the
@@ -43,8 +43,7 @@ It must match the compiler that produced the WASM module.
   Go's `js/wasm` runtime executes on one browser thread.
 - The telemetry view reads `Result.ConvergenceCurve`, `IterationBestHistory`,
   `SigmaHistory`, and `ConditionNumberHistory` directly.
-- The restart view composes current single-run APIs and labels itself accordingly. It
-  does not introduce or imitate the planned Phase 7 public restart API.
+- The restart view calls `OptimizeWithRestarts` and reads its per-run records directly.
 
 The contour image is rank-normalized. This preserves the geometry of low basins across
 objectives with very different dynamic ranges; its colors communicate relative height,

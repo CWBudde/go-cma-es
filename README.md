@@ -6,10 +6,10 @@ Strategy** (CMA-ES), following Hansen's tutorial (arXiv:1604.00772).
 Third in a family with [Mayfly](https://github.com/cwbudde/mayfly) and
 [Dragonfly](https://github.com/CWBudde/dragonfly), and deliberately unlike both of them.
 
-> **Status: under construction.** Phases 0–6 and 12 provide active full-covariance
+> **Status: under construction.** Phases 0–7 and 12 provide active full-covariance
 > CMA-ES, sep-CMA-ES, box-boundary handling, nonlinear constraints, convergence
-> criteria, lifecycle observers, and a WebAssembly showcase. Restart and block-diagonal
-> library variants remain later phases.
+> criteria, lifecycle observers, IPOP/BIPOP restarts, and a WebAssembly showcase.
+> Block-diagonal covariance remains a later phase.
 > [`PLAN.md`](PLAN.md) is the source of truth for progress.
 
 ## Why
@@ -43,7 +43,7 @@ CMA-ES answers both halves of that:
 | Active CMA                  | ready   | guarded negative rank-µ weights; the modern reference default    |
 | sep-CMA-ES                  | ready   | diagonal covariance, `O(n)` per sample, for large `n`            |
 | Block-diagonal CMA-ES       | planned | one small block per parameter group; matches structured problems |
-| IPOP / BIPOP restarts       | planned | population-doubling restart strategies for multimodal problems   |
+| IPOP / BIPOP restarts       | ready   | shared-budget restart strategies for multimodal problems         |
 | Deterministic parallel eval | ready   | bit-identical to a serial run of the same seed                   |
 | WebAssembly demo            | ready   | watch the covariance ellipse align with the valley               |
 
@@ -56,9 +56,8 @@ the sampled population, updated mean, best trail, and the 2σ ellipse reconstruc
 
 The companion pages put CMA-ES beside a fixed isotropic search on a rotated
 condition-10⁶ ellipsoid, align best cost with σ and covariance-condition histories, and
-map an IPOP-style population-doubling schedule across Rastrigin basins. The restart page
-composes the current single-run API in the demo layer; it does not claim the planned
-Phase 7 restart API exists.
+map the public IPOP population-doubling schedule across Rastrigin basins. The restart page
+renders the per-run records returned by `OptimizeWithRestarts`.
 
 ## Install
 
@@ -177,6 +176,32 @@ expose. Cancellation after a run starts returns its best-so-far with
 `TerminationCancelled`; a context canceled before startup still returns
 `context.Canceled` and no result.
 
+For multimodal objectives, set a positive global evaluation budget and select IPOP or
+BIPOP. IPOP doubles λ after each completed run, except where the shared budget is
+nearly spent and the final run's λ is capped at what remains. BIPOP spends from
+whichever of its large and small regimes has used fewer evaluations; small runs
+randomize their population, initial sigma, and capped budget. Both strategies use
+fresh deterministic means inside the configured box and return an auditable record
+for every run:
+
+```go
+config.MaxEvaluations = 100_000
+result, err := cmaes.OptimizeWithRestarts(config, cmaes.RestartBIPOP)
+if err != nil {
+	log.Fatal(err)
+}
+for _, run := range result.Restarts {
+	fmt.Printf("%s λ=%d evaluations=%d best=%g\n",
+		run.Regime, run.Lambda, run.Evaluations, run.Best.Cost)
+}
+```
+
+A target-cost termination ends the overall schedule early. Other convergence and run-cap
+terminations start a new run while the shared budget has evaluations left.
+`OptimizeWithRestartsContext` provides cancellation and accepts the same lifecycle run
+options; observers receive counts local to each run, and initialization options apply to
+the first run only.
+
 ## Development
 
 ```sh
@@ -199,6 +224,8 @@ roadmap.
   Space Complexity._ PPSN X.
 - Auger, A. & Hansen, N. (2005). _A Restart CMA Evolution Strategy With Increasing
   Population Size._ CEC 2005.
+- Hansen, N. (2009). _Benchmarking a BI-Population CMA-ES on the BBOB-2009 Function
+  Testbed._ GECCO Companion 2009.
 
 ## License
 

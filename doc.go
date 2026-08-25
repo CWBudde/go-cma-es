@@ -15,6 +15,8 @@
 // It also controls its own step size by cumulative step-size adaptation. TolX,
 // TolFun, TolXUp, condition-number, and no-effect criteria stop a converged or
 // numerically exhausted distribution without spending the rest of its budget.
+// IPOP and BIPOP turn those distribution-aware stops into independent restarts
+// under one shared evaluation budget for multimodal objectives.
 //
 // The implementation follows Hansen, N. (2016), "The CMA Evolution Strategy: A
 // Tutorial", arXiv:1604.00772, and cross-checks against the reference
@@ -25,9 +27,9 @@
 //
 // This package is under construction. Active full-covariance and separable
 // strategies, box-boundary handling, nonlinear constraints, convergence
-// criteria, lifecycle observers, and the WebAssembly showcase are implemented;
-// PLAN.md in the repository root is the single source of truth for later
-// variant work.
+// criteria, lifecycle observers, IPOP/BIPOP restarts, and the WebAssembly
+// showcase are implemented; PLAN.md in the repository root is the single
+// source of truth for later variant work.
 //
 // # Conventions
 //

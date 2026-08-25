@@ -39,9 +39,13 @@ refuse to resume across it.
   by default; separable CMA-ES with diagonal-only `O(n)` sampling and covariance updates,
   the Ros-Hansen learning-rate correction, full/separable dispatch, and comparative
   performance and objective tests (Phase 6).
+- IPOP and BIPOP restart schedules under one shared evaluation budget; deterministic
+  random restart means and per-run seeds; large/small BIPOP budget accounting; and
+  `RestartResult` records containing each run's population, allocation, best solution,
+  and termination reason (Phase 7).
 - A framework-free WebAssembly showcase with four contour-shaded objectives, replayable
   population and 2σ covariance views, a same-seed/same-budget isotropic comparison,
-  aligned cost/σ/condition telemetry, demo-layer IPOP population doubling, reproducible
+  aligned cost/σ/condition telemetry, public-API IPOP population doubling, reproducible
   build tooling, and GitHub Pages deployment (Phase 12).
 
 - Per-dimension `Config.LowerBounds` and `Config.UpperBounds`. The scalar `LowerBound` and

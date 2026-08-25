@@ -366,54 +366,50 @@ func jsRestart(opts js.Value) any {
 	restarts := clampInt(readInt(opts, "restarts", 5), 2, 6)
 	iterations := clampInt(readInt(opts, "iterations", 55), 10, 100)
 	baseLambda := clampInt(readInt(opts, "lambda", 6), 4, 12)
-	records := make([]any, 0, restarts)
-	markers := make([]float32, 0, restarts*4)
-	bestCost := math.Inf(1)
-	bestPosition := [2]float64{}
-	totalEvaluations := 0
+	budget := baseLambda * ((1 << restarts) - 1) * iterations
 
-	for restart := range restarts {
-		lambda := baseLambda << restart
-		seed := baseSeed + int64(restart)*1_000_003
-		startRNG := rand.New(rand.NewSource(seed ^ 0x5deece66d))
-		start := [2]float64{
-			spec.lower + (spec.upper-spec.lower)*startRNG.Float64(),
-			spec.lower + (spec.upper-spec.lower)*startRNG.Float64(),
-		}
-		restartSpec := spec
-		restartSpec.initial = start
+	config := cmaes.NewDefaultConfig(2)
+	config.ObjectiveFunc = spec.objective
+	config.LowerBound = spec.lower
+	config.UpperBound = spec.upper
+	config.InitialMean = []float64{spec.initial[0], spec.initial[1]}
+	config.InitialSigma = 1.25
+	config.Lambda = baseLambda
+	config.Mu = baseLambda / 2
+	config.MaxIterations = iterations
+	config.MaxEvaluations = budget
+	config.MaxWorkers = 1
+	config.EnableParallel = false
+	config.ActiveCMA = true
+	config.Convergence = nil
+	config.Seed = &baseSeed
 
-		request := runRequest{
-			spec: restartSpec, mode: cmaes.CovarianceFull, seed: seed,
-			sigma: 1.25, lambda: lambda, iterations: iterations, active: true,
-		}
-		_, result, err := runCMA(request)
-		if err != nil {
-			return errorResult("restart %d: %v", restart+1, err)
-		}
+	result, err := cmaes.OptimizeWithRestarts(config, cmaes.RestartIPOP)
+	if err != nil {
+		return errorResult("restart schedule: %v", err)
+	}
 
-		position := result.GlobalBest.Position
+	records := make([]any, 0, len(result.Restarts))
+	markers := make([]float32, 0, len(result.Restarts)*4)
+	for _, record := range result.Restarts {
+		position := record.Best.Position
 		basinX, basinY := math.Round(position[0]), math.Round(position[1])
 		markers = append(markers,
 			float32(position[0]), float32(position[1]), float32(basinX), float32(basinY))
 		records = append(records, map[string]any{
-			"restart": restart + 1, "lambda": lambda, "seed": float64(seed),
-			"evaluations": result.FuncEvalCount, "iterations": result.IterationCount,
-			"termination": string(result.TerminationReason), "best": finiteNumber(result.GlobalBest.Cost),
-			"start": []any{start[0], start[1]}, "position": []any{position[0], position[1]},
-			"basin": []any{basinX, basinY},
+			"restart": record.Restart + 1, "lambda": record.Lambda, "seed": float64(record.Seed),
+			"evaluations": record.Evaluations, "iterations": record.Iterations,
+			"termination": string(record.TerminationReason), "best": finiteNumber(record.Best.Cost),
+			"start":    []any{record.InitialMean[0], record.InitialMean[1]},
+			"position": []any{position[0], position[1]},
+			"basin":    []any{basinX, basinY},
 		})
-		totalEvaluations += result.FuncEvalCount
-		if result.GlobalBest.Cost < bestCost {
-			bestCost = result.GlobalBest.Cost
-			bestPosition = [2]float64{position[0], position[1]}
-		}
 	}
 
 	response := map[string]any{
-		"records": records, "restarts": restarts, "baseLambda": baseLambda,
-		"totalEvaluations": totalEvaluations, "best": finiteNumber(bestCost),
-		"bestPosition": []any{bestPosition[0], bestPosition[1]},
+		"records": records, "restarts": len(result.Restarts), "baseLambda": baseLambda,
+		"totalEvaluations": result.FuncEvalCount, "best": finiteNumber(result.GlobalBest.Cost),
+		"bestPosition": []any{result.GlobalBest.Position[0], result.GlobalBest.Position[1]},
 	}
 	putFloats(response, opts.Get("out"), "markers", markers)
 

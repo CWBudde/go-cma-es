@@ -204,19 +204,21 @@ func TestTransformBoundedIsPerCoordinate(t *testing.T) {
 // TestPenaltyBoundaryUsesPerCoordinateBounds pushes one candidate past the
 // upper bound of the narrow third coordinate only, where au = 0.25. Its value
 // 5.5 is ub + 2 au, one shoulder width past the end of the shoulder, so the
-// recorded squared deviation is 0.25^2 = 0.0625. The transformation reflects it
-// to 5.25 - 0.25 = 5.0 and the shoulder then maps that to 5 - 0.25/4 = 4.9375.
+// deviation the penalty squares is 0.25. The transformation reflects it to
+// 5.25 - 0.25 = 5.0 and the shoulder then maps that to 5 - 0.25/4 = 4.9375.
 // Under a shared scalar box of [-10, 10] the same value would be interior.
 func TestPenaltyBoundaryUsesPerCoordinateBounds(t *testing.T) {
+	config := nonUniformConfig(BoundaryPenalty)
 	state := &strategyState{m: []float64{0, 0, 2}, sigma: 1}
 	population := []candidate{{x: []float64{1, -2, 5.5}, y: make([]float64, 3)}}
 
-	applyBoundaryHandling(population, state, nonUniformConfig(BoundaryPenalty))
+	applyBoundaryHandling(population, state, config)
 
 	assertVectorClose(t, population[0].evaluatedPosition(), []float64{1, -2, 4.9375}, 1e-15)
 
-	if math.Abs(population[0].boundaryDistance-0.0625) > 1e-15 {
-		t.Errorf("boundaryDistance = %v, want 0.0625", population[0].boundaryDistance)
+	lower, upper := coordinateBounds(config, 2)
+	if deviation := outOfBoxDeviation(5.5, lower, upper); math.Abs(deviation-0.25) > 1e-15 {
+		t.Errorf("outOfBoxDeviation = %v, want 0.25", deviation)
 	}
 }
 
@@ -245,9 +247,8 @@ func TestPenaltyBoundaryLeavesInteriorStepsUntouched(t *testing.T) {
 	assertVectorClose(t, population[0].y, wantY, 0)
 	assertVectorClose(t, population[0].evaluatedPosition(), wantX, 0)
 
-	if population[0].boundaryDistance != 0 || population[0].boundaryPenalty != 0 {
-		t.Errorf("interior penalty = (%v, %v), want zero",
-			population[0].boundaryDistance, population[0].boundaryPenalty)
+	if population[0].boundaryPenalty != 0 {
+		t.Errorf("interior penalty = %v, want zero", population[0].boundaryPenalty)
 	}
 }
 

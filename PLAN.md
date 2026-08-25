@@ -2,9 +2,10 @@
 
 Module: `github.com/CWBudde/go-cma-es`
 Package: `cmaes` (flat, at the repository root)
-Status: **Phases 0–6 and 12 complete.** Full and separable CMA-ES, active covariance
+Status: **Phases 0–7 and 12 complete.** Full and separable CMA-ES, active covariance
 adaptation, boundary handling, nonlinear constraints, convergence criteria, lifecycle
-observers, and the WebAssembly showcase are implemented. Nothing is released.
+observers, IPOP/BIPOP restarts, and the WebAssembly showcase are implemented. Nothing is
+released.
 
 This document is the roadmap and the single source of truth for progress. It is organised
 the same way as the sibling [Mayfly](https://github.com/cwbudde/mayfly) and
@@ -294,15 +295,15 @@ the standard, published, testable stepping stone to it.
 
 ---
 
-## Phase 7 — IPOP and BIPOP restarts
+## Phase 7 — IPOP and BIPOP restarts ✅
 
-- [ ] `restart.go`: `OptimizeWithRestarts` — on any convergence criterion, restart with
+- [x] `restart.go`: `OptimizeWithRestarts` — on any convergence criterion, restart with
       `λ ← 2λ` until the budget is exhausted; return the best
-- [ ] BIPOP: interleave large-population (IPOP) runs with small-population runs on random
+- [x] BIPOP: interleave large-population (IPOP) runs with small-population runs on random
       small budgets, advancing whichever regime has consumed less budget
-- [ ] `RestartResult` with per-restart records: λ, evaluations, best cost, termination
+- [x] `RestartResult` with per-restart records: λ, evaluations, best cost, termination
       reason
-- [ ] Tests: Rastrigin n = 10 — restarts find the global optimum where a single run does
+- [x] Tests: Rastrigin n = 10 — restarts find the global optimum where a single run does
       not; the evaluation budget is respected exactly
 
 **Rationale**: The consumer measured that restarts are worth about 157 cost points and

@@ -18,9 +18,9 @@ optimization library, and the third in a family with
 | **block-CMA-ES** | Same, block-structured parameters         | `CovarianceMode = "block"`     |
 | **IPOP / BIPOP** | Multimodal, restart strategies            | `OptimizeWithRestarts`         |
 
-**Current status**: nothing is released. **Phases 0–6 and 12 are complete**, including
-the WebAssembly showcase; restart and block-diagonal library variants are not implemented
-yet.
+**Current status**: nothing is released. **Phases 0–7 and 12 are complete**, including
+IPOP/BIPOP restarts and the WebAssembly showcase; block-diagonal covariance is not
+implemented yet.
 
 **PLAN.md is the single source of truth for progress.** Before starting work, read
 PLAN.md and check which boxes are ticked. Do not infer status from this file or from
@@ -108,8 +108,8 @@ generator, never writes to `Config`, and records the seed in `Result.Seed` /
 `Result.SeedKnown`.
 
 `Config` is treated as read-only for the duration of a run. That is what makes the same
-configuration safe to optimize twice, which Phase 7's `OptimizeWithRestarts` and the
-Phase 9 consumer adapter both depend on.
+configuration safe to optimize repeatedly, which `OptimizeWithRestarts` and the Phase 9
+consumer adapter both depend on.
 
 `omitempty` goes on pointer fields only, where nil means "unset" and is meaningfully
 distinct from the zero value. Value fields are always written, so a saved configuration
