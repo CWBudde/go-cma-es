@@ -10,6 +10,10 @@ import (
 const (
 	defaultInitialSigma       = 0.3
 	defaultMaxIterations      = 1000
+	defaultTolX               = 1e-11
+	defaultTolFun             = 1e-12
+	defaultTolXUp             = 1e4
+	defaultConditionCov       = 1e14
 	highDimensionalIterations = 3000
 	fastConvergenceIterations = 300
 )
@@ -40,6 +44,7 @@ func NewDefaultConfig(problemSize int) *Config {
 	}
 
 	return &Config{
+		Convergence:    NewDefaultConvergenceConfig(),
 		InitialMean:    initialMean,
 		BoundaryMethod: BoundaryPenalty,
 		CovarianceMode: CovarianceFull,
@@ -50,6 +55,19 @@ func NewDefaultConfig(problemSize int) *Config {
 		MaxIterations:  defaultMaxIterations,
 		MaxWorkers:     runtime.NumCPU(),
 		ActiveCMA:      true,
+	}
+}
+
+// NewDefaultConvergenceConfig returns Hansen's distribution-derived stopping
+// criteria. Target-cost and stagnation termination remain opt-in.
+func NewDefaultConvergenceConfig() *ConvergenceConfig {
+	return &ConvergenceConfig{
+		TolX:          defaultTolX,
+		TolFun:        defaultTolFun,
+		TolXUp:        defaultTolXUp,
+		ConditionCov:  defaultConditionCov,
+		NoEffectAxis:  true,
+		NoEffectCoord: true,
 	}
 }
 
@@ -200,6 +218,11 @@ func validateBounds(config *Config) error {
 			config.LowerBound, config.UpperBound)
 	}
 
+	if !isFinite(config.UpperBound - config.LowerBound) {
+		return fmt.Errorf("upper_bound - lower_bound must be finite (got %v - %v)",
+			config.UpperBound, config.LowerBound)
+	}
+
 	return nil
 }
 
@@ -247,6 +270,23 @@ func validateConvergenceConfig(config *ConvergenceConfig, maxIterations int) err
 		return fmt.Errorf("target_cost must be finite (got %v)", *config.TargetCost)
 	}
 
+	tolerances := []struct {
+		name  string
+		value float64
+	}{
+		{"tol_x", config.TolX},
+		{"tol_fun", config.TolFun},
+		{"tol_x_up", config.TolXUp},
+		{"condition_cov", config.ConditionCov},
+	}
+
+	for _, tolerance := range tolerances {
+		if !isFinite(tolerance.value) || tolerance.value < 0 {
+			return fmt.Errorf("%s must be finite and non-negative (got %v)",
+				tolerance.name, tolerance.value)
+		}
+	}
+
 	if !isFinite(config.MinImprovement) || config.MinImprovement < 0 {
 		return fmt.Errorf("min_improvement must be finite and non-negative (got %v)",
 			config.MinImprovement)
@@ -290,6 +330,22 @@ func validateConstraintConfig(config *ConstraintConfig) error {
 	if !isFinite(config.EqualityTolerance) || config.EqualityTolerance < 0 {
 		return fmt.Errorf("equality_tolerance must be finite and non-negative (got %v)",
 			config.EqualityTolerance)
+	}
+
+	for index, constraint := range config.Inequalities {
+		if constraint == nil {
+			return fmt.Errorf("inequality constraint %d is nil", index)
+		}
+	}
+
+	for index, constraint := range config.Equalities {
+		if constraint == nil {
+			return fmt.Errorf("equality constraint %d is nil", index)
+		}
+	}
+
+	if config.Handling == ConstraintHandlingPenalty && config.PenaltyFactor == 0 {
+		return errors.New("penalty_factor must be positive with penalty handling")
 	}
 
 	return nil

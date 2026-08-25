@@ -66,12 +66,28 @@ type ConstraintConfig struct {
 	EqualityTolerance float64                  `json:"equality_tolerance,omitempty"`
 }
 
-// ConvergenceConfig controls optional target-cost and stagnation termination.
-// The distribution-derived CMA-ES criteria are implemented in Phase 5.
+// ConvergenceConfig controls early termination. A zero numeric tolerance and
+// a false no-effect flag disable the corresponding criterion.
 type ConvergenceConfig struct {
 	// TargetCost stops once the best cost is at most this value. Nil disables
 	// the target, while a pointer to zero represents an enabled zero target.
 	TargetCost *float64 `json:"target_cost,omitempty"`
+
+	// TolX stops when every distribution-axis step and covariance evolution
+	// path component is smaller than this absolute tolerance.
+	TolX float64 `json:"tol_x"`
+
+	// TolFun stops when the range of recent population scores falls below this
+	// absolute tolerance.
+	TolFun float64 `json:"tol_fun"`
+
+	// TolXUp stops when the largest distribution-axis step grows beyond this
+	// multiple of the run's initial sigma.
+	TolXUp float64 `json:"tol_x_up"`
+
+	// ConditionCov stops when the covariance matrix's spectral condition
+	// number exceeds this value.
+	ConditionCov float64 `json:"condition_cov"`
 
 	// MinImprovement is the absolute improvement needed to reset stagnation.
 	MinImprovement float64 `json:"min_improvement"`
@@ -83,6 +99,14 @@ type ConvergenceConfig struct {
 	// MinIterations delays convergence checks until this many iterations have
 	// completed. Zero begins checking at the first iteration boundary.
 	MinIterations int `json:"min_iterations"`
+
+	// NoEffectAxis enables detection of principal-axis steps that no longer
+	// change the floating-point mean.
+	NoEffectAxis bool `json:"no_effect_axis"`
+
+	// NoEffectCoord enables detection of coordinate steps that no longer
+	// change the floating-point mean.
+	NoEffectCoord bool `json:"no_effect_coord"`
 }
 
 // TerminationReason describes why an optimization run ended.
@@ -101,12 +125,16 @@ const (
 	TerminationTolX TerminationReason = "tol_x"
 	// TerminationTolFun means the recent cost range fell below TolFun.
 	TerminationTolFun TerminationReason = "tol_fun"
+	// TerminationTolXUp means the distribution step grew beyond TolXUp.
+	TerminationTolXUp TerminationReason = "tol_x_up"
 	// TerminationConditionNumber means the covariance became ill-conditioned.
 	TerminationConditionNumber TerminationReason = "condition_number"
 	// TerminationNoEffectAxis means movement along a principal axis had no effect.
 	TerminationNoEffectAxis TerminationReason = "no_effect_axis"
 	// TerminationNoEffectCoord means movement in a coordinate had no effect.
 	TerminationNoEffectCoord TerminationReason = "no_effect_coord"
+	// TerminationCancelled means the context canceled an in-progress run.
+	TerminationCancelled TerminationReason = "cancelled" //nolint:misspell // Public value follows PLAN.md.
 )
 
 // Best is the best position found and its objective and constraint values.
@@ -152,6 +180,12 @@ type Config struct {
 
 // Result holds the outcome and accounting information for an optimization.
 type Result struct {
+	// ConvergenceCurve, SigmaHistory, and ConditionNumberHistory contain one
+	// entry per completed iteration.
+	ConvergenceCurve       []float64
+	SigmaHistory           []float64
+	ConditionNumberHistory []float64
+
 	TerminationReason TerminationReason
 	GlobalBest        Best
 	FuncEvalCount     int

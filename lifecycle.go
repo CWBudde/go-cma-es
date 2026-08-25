@@ -1,0 +1,293 @@
+package cmaes
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+)
+
+// Progress describes the best solution known after a completed iteration.
+// Best and its Position are deep copies owned by the observer.
+type Progress struct {
+	Best            Best
+	Iteration       int
+	EvaluationCount int
+}
+
+// ProgressObserver receives progress synchronously on the optimization
+// goroutine after each completed iteration.
+type ProgressObserver func(Progress)
+
+// PopulationCandidate is one evaluated member of a population snapshot.
+type PopulationCandidate struct {
+	Position            []float64
+	Cost                float64
+	ConstraintViolation float64
+}
+
+// PopulationSnapshot contains the evaluated population after a completed
+// iteration. Population is in selection order and all slices are deep copies.
+type PopulationSnapshot struct {
+	Population      []PopulationCandidate
+	Best            Best
+	Iteration       int
+	EvaluationCount int
+}
+
+// PopulationObserver receives an opt-in deep copy of each evaluated
+// population. No population copying occurs when it is nil.
+type PopulationObserver func(PopulationSnapshot)
+
+// DistributionSnapshot describes the sampling distribution after a completed
+// iteration. Eigenvalues contains D, the square roots of C's eigenvalues, and
+// Eigenvectors contains B with eigenvectors in its columns.
+type DistributionSnapshot struct {
+	Mean            []float64
+	Eigenvalues     []float64
+	Eigenvectors    [][]float64
+	Sigma           float64
+	ConditionNumber float64
+	Iteration       int
+	EvaluationCount int
+}
+
+// DistributionObserver receives an opt-in deep copy of each distribution.
+type DistributionObserver func(DistributionSnapshot)
+
+// Logger receives structured optimization lifecycle events. *slog.Logger
+// implements Logger.
+type Logger interface {
+	Log(ctx context.Context, level slog.Level, message string, args ...any)
+}
+
+// RunOption customizes one optimization run. Construct options with the
+// With* functions in this file.
+type RunOption struct {
+	apply func(*runOptions) error
+}
+
+type runOptions struct {
+	observer             ProgressObserver
+	populationObserver   PopulationObserver
+	distributionObserver DistributionObserver
+	logger               Logger
+	initialPopulation    [][]float64
+	initialMean          []float64
+	initialSigma         float64
+	hasInitialMean       bool
+}
+
+// WithInitialPopulation seeds leading members of the first generation. The
+// remaining members are sampled normally. Positions are copied when the
+// option is constructed and again when it is applied.
+func WithInitialPopulation(positions [][]float64) RunOption {
+	snapshot := clonePositions(positions)
+
+	return RunOption{apply: func(options *runOptions) error {
+		options.initialPopulation = clonePositions(snapshot)
+
+		return nil
+	}}
+}
+
+// WithInitialMean overrides the starting mean and sigma for one run without
+// mutating Config. The mean is copied at construction and application time.
+func WithInitialMean(mean []float64, sigma float64) RunOption {
+	snapshot := append([]float64(nil), mean...)
+
+	return RunOption{apply: func(options *runOptions) error {
+		options.initialMean = append([]float64(nil), snapshot...)
+		options.initialSigma = sigma
+		options.hasInitialMean = true
+
+		return nil
+	}}
+}
+
+// WithProgressObserver registers a lightweight iteration observer. Nil
+// disables progress reporting.
+func WithProgressObserver(observer ProgressObserver) RunOption {
+	return RunOption{apply: func(options *runOptions) error {
+		options.observer = observer
+
+		return nil
+	}}
+}
+
+// WithPopulationObserver registers an evaluated-population observer. Nil
+// disables population reporting.
+func WithPopulationObserver(observer PopulationObserver) RunOption {
+	return RunOption{apply: func(options *runOptions) error {
+		options.populationObserver = observer
+
+		return nil
+	}}
+}
+
+// WithDistributionObserver registers a sampling-distribution observer. Nil
+// disables distribution reporting.
+func WithDistributionObserver(observer DistributionObserver) RunOption {
+	return RunOption{apply: func(options *runOptions) error {
+		options.distributionObserver = observer
+
+		return nil
+	}}
+}
+
+// WithLogger registers a structured lifecycle logger. Nil disables logging.
+func WithLogger(logger Logger) RunOption {
+	return RunOption{apply: func(options *runOptions) error {
+		options.logger = logger
+
+		return nil
+	}}
+}
+
+func resolveRunOptions(options []RunOption) (runOptions, error) {
+	var resolved runOptions
+
+	for index, option := range options {
+		if option.apply == nil {
+			return runOptions{}, fmt.Errorf("run option %d is invalid", index)
+		}
+
+		applyErr := option.apply(&resolved)
+		if applyErr != nil {
+			return runOptions{}, fmt.Errorf("apply run option %d: %w", index, applyErr)
+		}
+	}
+
+	return resolved, nil
+}
+
+func validateRunOptions(config *Config, options runOptions) error {
+	initialLimit := generationPopulationSize(config, 0)
+	if len(options.initialPopulation) > initialLimit {
+		return fmt.Errorf("initial population has %d positions, exceeds first generation size %d",
+			len(options.initialPopulation), initialLimit)
+	}
+
+	for index, position := range options.initialPopulation {
+		err := validateRunPosition("initial population", index, position, config)
+		if err != nil {
+			return err
+		}
+	}
+
+	if !options.hasInitialMean {
+		return nil
+	}
+
+	if len(options.initialMean) != config.ProblemSize {
+		return fmt.Errorf("initial mean has dimension %d, want %d",
+			len(options.initialMean), config.ProblemSize)
+	}
+
+	if !isFinite(options.initialSigma) || options.initialSigma <= 0 {
+		return fmt.Errorf("initial mean sigma must be finite and positive, got %v",
+			options.initialSigma)
+	}
+
+	for coordinate, value := range options.initialMean {
+		if !isFinite(value) {
+			return fmt.Errorf("initial mean coordinate %d must be finite, got %v", coordinate, value)
+		}
+	}
+
+	return nil
+}
+
+func validateRunPosition(kind string, index int, position []float64, config *Config) error {
+	if len(position) != config.ProblemSize {
+		return fmt.Errorf("%s position %d has dimension %d, want %d",
+			kind, index, len(position), config.ProblemSize)
+	}
+
+	for coordinate, value := range position {
+		if !isFinite(value) {
+			return fmt.Errorf("%s position %d coordinate %d must be finite, got %v",
+				kind, index, coordinate, value)
+		}
+
+		if value < config.LowerBound || value > config.UpperBound {
+			return fmt.Errorf("%s position %d coordinate %d is outside bounds [%v, %v]: %v",
+				kind, index, coordinate, config.LowerBound, config.UpperBound, value)
+		}
+	}
+
+	return nil
+}
+
+func clonePositions(positions [][]float64) [][]float64 {
+	if positions == nil {
+		return nil
+	}
+
+	cloned := make([][]float64, len(positions))
+	for index, position := range positions {
+		cloned[index] = append([]float64(nil), position...)
+	}
+
+	return cloned
+}
+
+func cloneBest(best Best) Best {
+	return Best{
+		Position:            append([]float64(nil), best.Position...),
+		Cost:                best.Cost,
+		ConstraintViolation: best.ConstraintViolation,
+	}
+}
+
+func notifyLifecycle(
+	options runOptions,
+	iteration, evaluations int,
+	best Best,
+	population []candidate,
+	state *strategyState,
+) {
+	if options.observer != nil {
+		options.observer(Progress{
+			Best:            cloneBest(best),
+			Iteration:       iteration,
+			EvaluationCount: evaluations,
+		})
+	}
+
+	if options.populationObserver != nil {
+		candidates := make([]PopulationCandidate, len(population))
+		for index, current := range population {
+			candidates[index] = PopulationCandidate{
+				Position:            append([]float64(nil), current.evaluatedPosition()...),
+				Cost:                current.cost,
+				ConstraintViolation: current.constraintViolation,
+			}
+		}
+
+		options.populationObserver(PopulationSnapshot{
+			Population:      candidates,
+			Best:            cloneBest(best),
+			Iteration:       iteration,
+			EvaluationCount: evaluations,
+		})
+	}
+
+	if options.distributionObserver != nil {
+		options.distributionObserver(distributionSnapshot(state, iteration, evaluations))
+	}
+}
+
+func distributionSnapshot(
+	state *strategyState,
+	iteration, evaluations int,
+) DistributionSnapshot {
+	return DistributionSnapshot{
+		Mean:            append([]float64(nil), state.m...),
+		Eigenvalues:     append([]float64(nil), state.d...),
+		Eigenvectors:    clonePositions(state.b),
+		Sigma:           state.sigma,
+		ConditionNumber: covarianceConditionNumber(state.d),
+		Iteration:       iteration,
+		EvaluationCount: evaluations,
+	}
+}

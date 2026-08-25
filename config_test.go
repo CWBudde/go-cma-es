@@ -3,6 +3,7 @@ package cmaes
 import (
 	"math"
 	"math/rand"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -53,6 +54,11 @@ func TestNewDefaultConfig(t *testing.T) {
 		t.Error("ActiveCMA = false, want true")
 	}
 
+	wantConvergence := NewDefaultConvergenceConfig()
+	if !reflect.DeepEqual(config.Convergence, wantConvergence) {
+		t.Errorf("Convergence = %+v, want %+v", config.Convergence, wantConvergence)
+	}
+
 	for index, value := range config.InitialMean {
 		if value != 0 {
 			t.Errorf("InitialMean[%d] = %v, want 0", index, value)
@@ -64,9 +70,14 @@ func TestConstructorsReturnIndependentConfigs(t *testing.T) {
 	first := NewDefaultConfig(3)
 	second := NewDefaultConfig(3)
 	first.InitialMean[0] = 42
+	first.Convergence.TolX = 42
 
 	if second.InitialMean[0] != 0 {
 		t.Fatalf("constructors share InitialMean storage: second[0] = %v", second.InitialMean[0])
+	}
+
+	if second.Convergence.TolX != defaultTolX {
+		t.Fatalf("constructors share Convergence storage: second TolX = %v", second.Convergence.TolX)
 	}
 }
 
@@ -209,9 +220,15 @@ func TestValidateAcceptsCompleteConfiguration(t *testing.T) {
 	config.MaxEvaluations = 0
 	config.Convergence = &ConvergenceConfig{
 		TargetCost:           &target,
+		TolX:                 1e-11,
+		TolFun:               1e-12,
+		TolXUp:               1e4,
+		ConditionCov:         1e14,
 		MinImprovement:       0.01,
 		StagnationIterations: 10,
 		MinIterations:        2,
+		NoEffectAxis:         true,
+		NoEffectCoord:        true,
 	}
 	config.Constraints = &ConstraintConfig{
 		Handling:          ConstraintHandlingPenalty,
@@ -240,6 +257,9 @@ func TestValidateRejectsInvalidConfiguration(t *testing.T) {
 		{"non-finite upper bound", "finite", func(c *Config) { c.UpperBound = math.Inf(1) }},
 		{"equal bounds", "lower_bound", func(c *Config) { c.LowerBound, c.UpperBound = 1, 1 }},
 		{"inverted bounds", "lower_bound", func(c *Config) { c.LowerBound, c.UpperBound = 2, 1 }},
+		{"overflowing bound span", "must be finite", func(c *Config) {
+			c.LowerBound, c.UpperBound = -math.MaxFloat64, math.MaxFloat64
+		}},
 		{"zero sigma", "initial_sigma", func(c *Config) { c.InitialSigma = 0 }},
 		{"infinite sigma", "initial_sigma", func(c *Config) { c.InitialSigma = math.Inf(1) }},
 		{"mean length", "initial_mean", func(c *Config) { c.InitialMean = []float64{0} }},
@@ -264,6 +284,18 @@ func TestValidateRejectsInvalidConfiguration(t *testing.T) {
 		{"non-finite target", "target_cost", func(c *Config) {
 			target := math.NaN()
 			c.Convergence = &ConvergenceConfig{TargetCost: &target}
+		}},
+		{"negative TolX", "tol_x", func(c *Config) {
+			c.Convergence = &ConvergenceConfig{TolX: -1}
+		}},
+		{"infinite TolFun", "tol_fun", func(c *Config) {
+			c.Convergence = &ConvergenceConfig{TolFun: math.Inf(1)}
+		}},
+		{"negative TolXUp", "tol_x_up", func(c *Config) {
+			c.Convergence = &ConvergenceConfig{TolXUp: -1}
+		}},
+		{"infinite condition", "condition_cov", func(c *Config) {
+			c.Convergence = &ConvergenceConfig{ConditionCov: math.Inf(1)}
 		}},
 		{"negative improvement", "min_improvement", func(c *Config) {
 			c.Convergence = &ConvergenceConfig{MinImprovement: -1}
@@ -298,6 +330,15 @@ func TestValidateRejectsInvalidConfiguration(t *testing.T) {
 		{"infinite equality tolerance", "equality_tolerance", func(c *Config) {
 			c.Constraints = &ConstraintConfig{EqualityTolerance: math.Inf(1)}
 		}},
+		{"nil inequality", "inequality constraint", func(c *Config) {
+			c.Constraints = &ConstraintConfig{Inequalities: []ConstraintFunction{nil}}
+		}},
+		{"nil equality", "equality constraint", func(c *Config) {
+			c.Constraints = &ConstraintConfig{Equalities: []ConstraintFunction{nil}}
+		}},
+		{"zero penalty factor", "positive", func(c *Config) {
+			c.Constraints = &ConstraintConfig{Handling: ConstraintHandlingPenalty}
+		}},
 	}
 
 	for _, test := range tests {
@@ -330,9 +371,11 @@ func TestTerminationReasonValues(t *testing.T) {
 		TerminationStagnation:      "stagnation",
 		TerminationTolX:            "tol_x",
 		TerminationTolFun:          "tol_fun",
+		TerminationTolXUp:          "tol_x_up",
 		TerminationConditionNumber: "condition_number",
 		TerminationNoEffectAxis:    "no_effect_axis",
 		TerminationNoEffectCoord:   "no_effect_coord",
+		TerminationCancelled:       "cancelled", //nolint:misspell // Public value follows PLAN.md.
 	}
 
 	for reason, want := range reasons {

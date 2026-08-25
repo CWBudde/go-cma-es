@@ -18,8 +18,8 @@ optimization library, and the third in a family with
 | **block-CMA-ES** | Same, block-structured parameters         | `CovarianceMode = "block"`     |
 | **IPOP / BIPOP** | Multimodal, restart strategies            | `OptimizeWithRestarts`         |
 
-**Current status**: nothing is released. **Phase 3 (core CMA-ES) is complete**; boundary
-handling, convergence criteria, and algorithm variants are not implemented yet.
+**Current status**: nothing is released. **Phase 5 (convergence and lifecycle) is
+complete**; algorithm variants are not implemented yet.
 
 **PLAN.md is the single source of truth for progress.** Before starting work, read
 PLAN.md and check which boxes are ticked. Do not infer status from this file or from
@@ -81,6 +81,7 @@ corresponding phase is complete.
 | `cmaes.go`       | the strategy itself: sampling, recombination, CSA, C update     |
 | `boundary.go`    | box handling; `constraints.go` for Deb rules and penalties      |
 | `convergence.go` | the stopping criteria; `lifecycle.go` for observers and options |
+| `monitoring.go`  | convergence histories and structured lifecycle logging          |
 | `separable.go`   | sep-CMA-ES; `active.go` for negative rank-µ weights             |
 | `blockdiag.go`   | block-diagonal covariance                                       |
 | `restart.go`     | IPOP and BIPOP                                                  |

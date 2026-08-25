@@ -26,6 +26,15 @@ refuse to resume across it.
   cumulative step-size adaptation, evolution paths, rank-one and rank-µ covariance
   updates, lazy eigendecomposition, deterministic parallel evaluation, and the
   `Optimize` and `OptimizeContext` entry points (Phase 3).
+- Clamp, repeated-reflection, and Hansen linear/quadratic transformation boundary
+  handling, with the transformation plus a scale-adaptive remote-copy penalty as the
+  default; nonlinear inequality and equality constraints with Deb feasibility or
+  linear/quadratic penalty ranking (Phase 4).
+- Hansen's TolX, TolFun, TolXUp, covariance-condition and no-effect stopping criteria;
+  target and stagnation termination; run-scoped initial population and mean seeding;
+  deep-copy progress, population and distribution observers; structured logging;
+  convergence, sigma and condition-number histories; and best-so-far cancellation
+  results (Phase 5).
 
 ### Fixed
 

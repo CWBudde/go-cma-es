@@ -9,17 +9,9 @@ import (
 	"runtime"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
-
-// RunOption customizes one optimization run. Phase 5 adds the lifecycle
-// option constructors; the opaque type is defined now because it is part of
-// the OptimizeContext signature.
-type RunOption struct {
-	apply func(*runOptions) error
-}
-
-type runOptions struct{}
 
 // strategyState is the mutable full-covariance CMA-ES distribution.
 // Eigenvectors are stored as the columns of b and d contains their standard
@@ -36,10 +28,30 @@ type strategyState struct {
 }
 
 type candidate struct {
-	x    []float64
-	y    []float64
-	z    []float64
-	cost float64
+	x                   []float64
+	y                   []float64
+	z                   []float64
+	evaluationX         []float64
+	cost                float64
+	constraintViolation float64
+	boundaryDistance    float64
+	boundaryPenalty     float64
+	evaluated           bool
+}
+
+type optimizationRun struct {
+	config           *Config
+	state            *strategyState
+	tracker          *convergenceTracker
+	reason           TerminationReason
+	curve            []float64
+	sigmaHistory     []float64
+	conditionHistory []float64
+	options          runOptions
+	best             Best
+	parameters       strategyParameters
+	evaluations      int
+	iterations       int
 }
 
 // Optimize runs full-covariance CMA-ES with a background context.
@@ -60,7 +72,7 @@ func OptimizeContext(ctx context.Context, config *Config, options ...RunOption) 
 		return nil, ctxErr
 	}
 
-	optionsErr := resolveRunOptions(options)
+	resolved, optionsErr := resolveRunOptions(options)
 	if optionsErr != nil {
 		return nil, optionsErr
 	}
@@ -74,88 +86,185 @@ func OptimizeContext(ctx context.Context, config *Config, options ...RunOption) 
 		return nil, fmt.Errorf("covariance mode %q is not implemented yet", config.CovarianceMode)
 	}
 
-	if config.Constraints != nil {
-		return nil, errors.New("constraints are not implemented yet")
-	}
-
-	if config.Convergence != nil {
-		return nil, errors.New("convergence criteria are not implemented yet")
+	optionsErr = validateRunOptions(config, resolved)
+	if optionsErr != nil {
+		return nil, optionsErr
 	}
 
 	rng, seed, seedKnown := resolveRandomSource(config)
-	parameters := deriveStrategyParameters(config)
-	state := newStrategyState(config)
-	best := Best{Cost: math.Inf(1)}
-	evaluations := 0
-	iterations := 0
-	reason := TerminationMaxIterations
+	run := newOptimizationRun(config, resolved)
 
-	for generation := range config.MaxIterations {
-		ctxErr = ctx.Err()
-		if ctxErr != nil {
-			return nil, ctxErr
-		}
+	logOptimizationStarted(ctx, resolved.logger, config)
 
-		populationSize := generationPopulationSize(config, evaluations)
-		if populationSize == 0 {
-			reason = TerminationMaxEvaluations
-
-			break
-		}
-
-		refreshEigensystemIfStale(state, evaluations, config.Lambda, parameters)
-		population := samplePopulation(state, populationSize, rng)
-
-		evaluationErr := evaluatePopulation(ctx, config, population)
-		if evaluationErr != nil {
-			return nil, evaluationErr
-		}
-
-		evaluations += len(population)
-		updateBest(&best, population)
-
-		if len(population) < config.Mu {
-			reason = TerminationMaxEvaluations
-
-			break
-		}
-
-		sortPopulation(population)
-		updateDistribution(state, population, parameters, generation)
-		iterations = generation + 1
-
-		if config.MaxEvaluations > 0 && evaluations >= config.MaxEvaluations {
-			reason = TerminationMaxEvaluations
-
-			break
-		}
+	runErr := run.execute(ctx, rng)
+	if runErr != nil {
+		return nil, runErr
 	}
 
-	return &Result{
-		TerminationReason: reason,
-		GlobalBest:        best,
-		FuncEvalCount:     evaluations,
-		IterationCount:    iterations,
-		Seed:              seed,
-		SeedKnown:         seedKnown,
-	}, nil
+	result := run.result(seed, seedKnown)
+
+	logOptimizationCompleted(ctx, resolved.logger, result)
+
+	return result, nil
 }
 
-func resolveRunOptions(options []RunOption) error {
-	var resolved runOptions
+func newOptimizationRun(config *Config, options runOptions) *optimizationRun {
+	state := newStrategyState(config)
+	if options.hasInitialMean {
+		copy(state.m, options.initialMean)
+		state.sigma = options.initialSigma
+	}
 
-	for index, option := range options {
-		if option.apply == nil {
-			return fmt.Errorf("run option %d is invalid", index)
+	return &optimizationRun{
+		config: config,
+		state:  state,
+		tracker: newConvergenceTracker(config.Convergence, config.Constraints,
+			state.sigma, config.ProblemSize, config.Lambda),
+		curve:            make([]float64, 0, config.MaxIterations),
+		sigmaHistory:     make([]float64, 0, config.MaxIterations),
+		conditionHistory: make([]float64, 0, config.MaxIterations),
+		best:             Best{Cost: math.Inf(1), ConstraintViolation: math.Inf(1)},
+		options:          options,
+		parameters:       deriveStrategyParameters(config),
+		reason:           TerminationMaxIterations,
+	}
+}
+
+func (run *optimizationRun) execute(ctx context.Context, rng *rand.Rand) error {
+	for generation := range run.config.MaxIterations {
+		if ctx.Err() != nil {
+			run.reason = TerminationCancelled
+
+			break
 		}
 
-		applyErr := option.apply(&resolved)
-		if applyErr != nil {
-			return fmt.Errorf("apply run option %d: %w", index, applyErr)
+		stop, err := run.executeGeneration(ctx, generation, rng)
+		if err != nil {
+			return err
+		}
+
+		if stop {
+			break
 		}
 	}
 
 	return nil
+}
+
+func (run *optimizationRun) executeGeneration(
+	ctx context.Context,
+	generation int,
+	rng *rand.Rand,
+) (bool, error) {
+	populationSize := generationPopulationSize(run.config, run.evaluations)
+	if populationSize == 0 {
+		run.reason = TerminationMaxEvaluations
+
+		return true, nil
+	}
+
+	refreshEigensystemIfStale(
+		run.state, run.evaluations, run.config.Lambda, run.parameters,
+	)
+
+	population := samplePopulation(run.state, populationSize, rng)
+	if generation == 0 {
+		applyInitialPopulation(population, run.state, run.options.initialPopulation)
+	}
+
+	applyBoundaryHandling(population, run.state, run.config)
+
+	evaluated, evaluationErr := evaluatePopulation(ctx, run.config, population)
+	run.evaluations += evaluated
+
+	if evaluationErr != nil {
+		return run.handleEvaluationError(population, evaluationErr)
+	}
+
+	assignBoundaryPenalties(population, run.config.BoundaryMethod)
+	updateBest(&run.best, population, run.config.Constraints)
+
+	if len(population) < run.config.Mu {
+		run.reason = TerminationMaxEvaluations
+
+		return true, nil
+	}
+
+	run.completeGeneration(ctx, generation, population)
+
+	return run.shouldStop(population), nil
+}
+
+func (run *optimizationRun) handleEvaluationError(
+	population []candidate,
+	evaluationErr error,
+) (bool, error) {
+	if !errors.Is(evaluationErr, context.Canceled) &&
+		!errors.Is(evaluationErr, context.DeadlineExceeded) {
+		return false, evaluationErr
+	}
+
+	partial := evaluatedCandidates(population)
+	assignBoundaryPenalties(partial, run.config.BoundaryMethod)
+	updateBest(&run.best, partial, run.config.Constraints)
+	run.reason = TerminationCancelled
+
+	return true, nil
+}
+
+func (run *optimizationRun) completeGeneration(
+	ctx context.Context,
+	generation int,
+	population []candidate,
+) {
+	sortPopulation(population, run.config.Constraints)
+	updateDistribution(run.state, population, run.parameters, generation)
+	run.iterations = generation + 1
+
+	condition := covarianceConditionNumber(run.state.d)
+	run.curve = append(run.curve, run.best.Cost)
+	run.sigmaHistory = append(run.sigmaHistory, run.state.sigma)
+	run.conditionHistory = append(run.conditionHistory, condition)
+	notifyLifecycle(
+		run.options, run.iterations, run.evaluations, run.best, population, run.state,
+	)
+	logIterationCompleted(
+		ctx, run.options.logger, run.iterations, run.evaluations,
+		run.best, run.state.sigma, condition,
+	)
+}
+
+func (run *optimizationRun) shouldStop(population []candidate) bool {
+	stopReason, stop := run.tracker.observe(
+		run.iterations, run.best, run.state, population,
+	)
+	if stop {
+		run.reason = stopReason
+
+		return true
+	}
+
+	if run.config.MaxEvaluations > 0 && run.evaluations >= run.config.MaxEvaluations {
+		run.reason = TerminationMaxEvaluations
+
+		return true
+	}
+
+	return false
+}
+
+func (run *optimizationRun) result(seed int64, seedKnown bool) *Result {
+	return &Result{
+		ConvergenceCurve:       run.curve,
+		SigmaHistory:           run.sigmaHistory,
+		ConditionNumberHistory: run.conditionHistory,
+		TerminationReason:      run.reason,
+		GlobalBest:             run.best,
+		FuncEvalCount:          run.evaluations,
+		IterationCount:         run.iterations,
+		Seed:                   seed,
+		SeedKnown:              seedKnown,
+	}
 }
 
 func resolveRandomSource(config *Config) (*rand.Rand, int64, bool) {
@@ -220,6 +329,17 @@ func samplePopulation(state *strategyState, populationSize int, rng *rand.Rand) 
 	return population
 }
 
+func applyInitialPopulation(
+	population []candidate,
+	state *strategyState,
+	initialPositions [][]float64,
+) {
+	for index, position := range initialPositions {
+		copy(population[index].x, position)
+		recomputeStep(&population[index], state)
+	}
+}
+
 func transformNormal(b [][]float64, d, z []float64) []float64 {
 	scaled := make([]float64, len(z))
 	for index := range scaled {
@@ -229,18 +349,19 @@ func transformNormal(b [][]float64, d, z []float64) []float64 {
 	return matrixVectorProduct(b, scaled)
 }
 
-func evaluatePopulation(ctx context.Context, config *Config, population []candidate) error {
+func evaluatePopulation(ctx context.Context, config *Config, population []candidate) (int, error) {
 	if !config.EnableParallel || len(population) < 2 {
 		for index := range population {
 			ctxErr := ctx.Err()
 			if ctxErr != nil {
-				return ctxErr
+				return index, ctxErr
 			}
 
-			population[index].cost = config.ObjectiveFunc(population[index].x)
+			evaluateCandidate(&population[index], config)
+			population[index].evaluated = true
 		}
 
-		return nil
+		return len(population), nil
 	}
 
 	workerCount := config.MaxWorkers
@@ -250,6 +371,8 @@ func evaluatePopulation(ctx context.Context, config *Config, population []candid
 
 	workerCount = min(workerCount, len(population))
 	jobs := make(chan int)
+
+	var evaluated atomic.Int64
 
 	var workers sync.WaitGroup
 	workers.Add(workerCount)
@@ -263,7 +386,9 @@ func evaluatePopulation(ctx context.Context, config *Config, population []candid
 					continue
 				}
 
-				population[index].cost = config.ObjectiveFunc(population[index].x)
+				evaluateCandidate(&population[index], config)
+				population[index].evaluated = true
+				evaluated.Add(1)
 			}
 		}()
 	}
@@ -275,38 +400,70 @@ func evaluatePopulation(ctx context.Context, config *Config, population []candid
 			close(jobs)
 			workers.Wait()
 
-			return ctx.Err()
+			return int(evaluated.Load()), ctx.Err()
 		}
 	}
 
 	close(jobs)
 	workers.Wait()
 
-	return ctx.Err()
+	return int(evaluated.Load()), ctx.Err()
 }
 
-func updateBest(best *Best, population []candidate) {
+func evaluatedCandidates(population []candidate) []candidate {
+	evaluated := make([]candidate, 0, len(population))
 	for _, current := range population {
-		if math.IsNaN(current.cost) || current.cost >= best.Cost {
+		if current.evaluated {
+			evaluated = append(evaluated, current)
+		}
+	}
+
+	return evaluated
+}
+
+func evaluateCandidate(current *candidate, config *Config) {
+	position := current.evaluatedPosition()
+	constraint := EvaluateConstraints(position, config.Constraints)
+	current.cost = config.ObjectiveFunc(position)
+	current.constraintViolation = constraint.Violation
+}
+
+func updateBest(best *Best, population []candidate, constraints *ConstraintConfig) {
+	for _, current := range population {
+		candidateEvaluation := CandidateEvaluation{
+			Cost:                current.cost,
+			ConstraintViolation: current.constraintViolation,
+		}
+		bestEvaluation := CandidateEvaluation{
+			Cost:                best.Cost,
+			ConstraintViolation: best.ConstraintViolation,
+		}
+
+		if !BetterConstrainedCandidate(candidateEvaluation, bestEvaluation, constraints) {
 			continue
 		}
 
 		best.Cost = current.cost
-		best.Position = append(best.Position[:0], current.x...)
+		best.Position = append(best.Position[:0], current.evaluatedPosition()...)
+		best.ConstraintViolation = current.constraintViolation
 	}
 }
 
-func sortPopulation(population []candidate) {
+func sortPopulation(population []candidate, constraints *ConstraintConfig) {
 	sort.SliceStable(population, func(left, right int) bool {
-		leftCost := population[left].cost
-		rightCost := population[right].cost
-
-		if math.IsNaN(leftCost) {
-			return false
-		}
-
-		return math.IsNaN(rightCost) || leftCost < rightCost
+		return BetterConstrainedCandidate(
+			rankedCandidateEvaluation(population[left]),
+			rankedCandidateEvaluation(population[right]),
+			constraints,
+		)
 	})
+}
+
+func rankedCandidateEvaluation(current candidate) CandidateEvaluation {
+	return CandidateEvaluation{
+		Cost:                current.cost + current.boundaryPenalty,
+		ConstraintViolation: current.constraintViolation,
+	}
 }
 
 func updateDistribution(

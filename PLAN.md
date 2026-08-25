@@ -2,7 +2,9 @@
 
 Module: `github.com/CWBudde/go-cma-es`
 Package: `cmaes` (flat, at the repository root)
-Status: **Phase 3 complete.** Full-covariance CMA-ES is implemented. Nothing is released.
+Status: **Phase 5 complete.** Full-covariance CMA-ES, boundary handling, nonlinear
+constraints, convergence criteria, and lifecycle observers are implemented. Nothing is
+released.
 
 This document is the roadmap and the single source of truth for progress. It is organised
 the same way as the sibling [Mayfly](https://github.com/cwbudde/mayfly) and
@@ -231,12 +233,12 @@ worth measuring.
 
 ## Phase 4 — Boundary handling and constraints
 
-- [ ] `boundary.go`: `BoundaryMethod` — `clamp`, `reflect`, and Hansen's
+- [x] `boundary.go`: `BoundaryMethod` — `clamp`, `reflect`, and Hansen's
       **transformation + penalty**
-- [ ] Default to the penalty method; document why it differs from Dragonfly's `wrap`
-- [ ] `constraints.go`: `ConstraintConfig` with Deb feasibility rules and penalty methods,
+- [x] Default to the penalty method; document why it differs from Dragonfly's `wrap`
+- [x] `constraints.go`: `ConstraintConfig` with Deb feasibility rules and penalty methods,
       matching the sibling API shape field for field
-- [ ] Tests: a bound-active optimum is found under all three methods; the penalty method
+- [x] Tests: a bound-active optimum is found under all three methods; the penalty method
       does not distort σ on an unconstrained problem
 
 **Rationale**: The API must feel like Dragonfly's so a consumer's adapter can be a near
@@ -248,19 +250,19 @@ bound is exactly how a CMA-ES run reports a healthy σ while going nowhere.
 
 ## Phase 5 — Convergence and lifecycle
 
-- [ ] `convergence.go`: `ConvergenceConfig` (`TargetCost`, `MinImprovement`,
+- [x] `convergence.go`: `ConvergenceConfig` (`TargetCost`, `MinImprovement`,
       `StagnationIterations`, `MinIterations`) — the sibling shape
-- [ ] CMA-ES's own criteria: `TolX`, `TolFun`, `TolXUp`, `ConditionCov`, `NoEffectAxis`,
+- [x] CMA-ES's own criteria: `TolX`, `TolFun`, `TolXUp`, `ConditionCov`, `NoEffectAxis`,
       `NoEffectCoord`, each mapping to a distinct `TerminationReason`
-- [ ] `lifecycle.go`: `Progress`, `ProgressObserver`, `PopulationSnapshot`,
+- [x] `lifecycle.go`: `Progress`, `ProgressObserver`, `PopulationSnapshot`,
       `PopulationObserver`, `Logger`, `RunOption`, `WithInitialPopulation`,
       `WithProgressObserver`, `WithPopulationObserver`, `WithLogger`
-- [ ] `WithInitialMean(m, sigma)` — the seeding hook a consumer's `Initial` candidate needs
-- [ ] `DistributionSnapshot` + `WithDistributionObserver`: mean, σ, eigenvalues `D`,
+- [x] `WithInitialMean(m, sigma)` — the seeding hook a consumer's `Initial` candidate needs
+- [x] `DistributionSnapshot` + `WithDistributionObserver`: mean, σ, eigenvalues `D`,
       eigenvectors `B`, condition number, per iteration, as deep copies and opt-in
-- [ ] `monitoring.go`: `ConvergenceCurve`, plus σ and condition-number history
-- [ ] Context cancellation returns the best-so-far with a cancelled termination reason
-- [ ] Tests: every criterion fires on a constructed case and reports its own reason
+- [x] `monitoring.go`: `ConvergenceCurve`, plus σ and condition-number history
+- [x] Context cancellation returns the best-so-far with a cancelled termination reason
+- [x] Tests: every criterion fires on a constructed case and reports its own reason
 
 **Rationale**: The consuming project's reports were only possible because runs were
 observable. Recording σ and the condition number per iteration means the _next_

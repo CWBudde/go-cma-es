@@ -6,9 +6,10 @@ Strategy** (CMA-ES), following Hansen's tutorial (arXiv:1604.00772).
 Third in a family with [Mayfly](https://github.com/cwbudde/mayfly) and
 [Dragonfly](https://github.com/CWBudde/dragonfly), and deliberately unlike both of them.
 
-> **Status: under construction.** Phase 3 provides passive, full-covariance CMA-ES.
-> Boundary handling, convergence criteria, active CMA, and covariance variants remain
-> later phases. [`PLAN.md`](PLAN.md) is the source of truth for progress.
+> **Status: under construction.** Phase 5 provides passive, full-covariance CMA-ES with
+> box-boundary handling, nonlinear constraints, convergence criteria, and lifecycle
+> observers. Active CMA and covariance variants remain later phases.
+> [`PLAN.md`](PLAN.md) is the source of truth for progress.
 
 ## Why
 
@@ -81,9 +82,75 @@ if err != nil {
 fmt.Printf("best cost: %g\n", result.GlobalBest.Cost)
 ```
 
-The bounds are validated now but applied starting in Phase 4. Until then, use the Phase 3
-entry point for unconstrained objectives whose useful search region lies comfortably
-inside the configured finite bounds.
+The default `BoundaryPenalty` method uses Hansen's smooth linear/quadratic transformation
+to evaluate every candidate inside the box while retaining its latent Gaussian step for
+covariance adaptation. A scale-adaptive penalty discourages remote periodic copies.
+`BoundaryClamp` and `BoundaryReflect` are also available, but both feed repaired samples
+back into adaptation. In particular, repeated clamping creates duplicate samples on a
+face and can bias the learned covariance.
+
+This differs deliberately from Dragonfly's default `wrap`. Wrapping is a useful
+exploration rule for a swarm moving in a toroidal search space, but its discontinuity at
+opposite faces is a poor default for a strategy whose central job is to learn a local
+Gaussian metric.
+
+Nonlinear inequalities use `g(x) <= 0`; equalities are satisfied within
+`EqualityTolerance`. Deb's feasibility rules are the factor-free default:
+
+```go
+config.Constraints = &cmaes.ConstraintConfig{
+	Inequalities: []cmaes.ConstraintFunction{
+		func(x []float64) float64 { return x[0] + x[1] - 1 },
+	},
+	Equalities: []cmaes.ConstraintFunction{
+		func(x []float64) float64 { return x[2] - x[3] },
+	},
+	EqualityTolerance: 1e-6,
+}
+```
+
+Set `Handling` to `ConstraintHandlingPenalty`, choose `PenaltyLinear` or
+`PenaltyQuadratic`, and provide a positive `PenaltyFactor` to rank by penalized cost
+instead.
+
+Hansen's distribution-derived stopping criteria are enabled by default: TolX, TolFun,
+TolXUp, covariance condition number, and the no-effect-axis and no-effect-coordinate
+checks. A target and stagnation window are opt-in:
+
+```go
+target := 1e-10
+config.Convergence.TargetCost = &target
+config.Convergence.MinImprovement = 1e-12
+config.Convergence.StagnationIterations = 50
+config.Convergence.MinIterations = 10
+```
+
+Set an individual numeric tolerance to zero, or a no-effect flag to false, to disable
+that criterion. Set `config.Convergence = nil` to run only to the iteration or evaluation
+cap. Every completed iteration adds aligned entries to `ConvergenceCurve`,
+`SigmaHistory`, and `ConditionNumberHistory`.
+
+Run options provide seeding, synchronous observation, and structured logging without
+mutating the reusable configuration:
+
+```go
+result, err := cmaes.OptimizeContext(
+	ctx,
+	config,
+	cmaes.WithInitialMean(previous.Position, 0.2),
+	cmaes.WithProgressObserver(func(progress cmaes.Progress) {
+		fmt.Printf("%d: cost=%g\n", progress.Iteration, progress.Best.Cost)
+	}),
+	cmaes.WithDistributionObserver(func(snapshot cmaes.DistributionSnapshot) {
+		fmt.Printf("sigma=%g condition=%g\n", snapshot.Sigma, snapshot.ConditionNumber)
+	}),
+)
+```
+
+Population and distribution observers are opt-in because they deep-copy the data they
+expose. Cancellation after a run starts returns its best-so-far with
+`TerminationCancelled`; a context canceled before startup still returns
+`context.Canceled` and no result.
 
 ## Development
 

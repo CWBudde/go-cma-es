@@ -9,9 +9,9 @@
 // A swarm with an isotropic, externally scheduled step size needs O(cond)
 // evaluations on a conditioned ellipsoid where CMA-ES needs O(log cond).
 //
-// It also controls its own step size by cumulative step-size adaptation. The
-// distribution-derived convergence criteria (TolX, TolFun, condition number,
-// no-effect axes) are part of the planned convergence layer.
+// It also controls its own step size by cumulative step-size adaptation. TolX,
+// TolFun, TolXUp, condition-number, and no-effect criteria stop a converged or
+// numerically exhausted distribution without spending the rest of its budget.
 //
 // The implementation follows Hansen, N. (2016), "The CMA Evolution Strategy: A
 // Tutorial", arXiv:1604.00772, and cross-checks against the reference
@@ -20,9 +20,10 @@
 //
 // # Status
 //
-// This package is under construction. The passive full-covariance strategy is
-// implemented; PLAN.md in the repository root is the single source of truth
-// for later boundary, convergence, and variant work.
+// This package is under construction. The passive full-covariance strategy,
+// box-boundary handling, nonlinear constraints, convergence criteria, and
+// lifecycle observers are implemented; PLAN.md in the repository root is the
+// single source of truth for later variant work.
 //
 // # Conventions
 //

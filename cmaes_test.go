@@ -293,18 +293,20 @@ func TestOptimizeContextValidationAndCancellation(t *testing.T) {
 
 	constrained := optimizationConfig(2, 78, sphere)
 	constrained.Constraints = &ConstraintConfig{}
+	constrained.MaxIterations = 1
 
 	result, err = Optimize(constrained)
-	if result != nil || err == nil {
-		t.Fatalf("constraints returned (%v, %v), want (nil, not implemented error)", result, err)
+	if result == nil || err != nil {
+		t.Fatalf("constraints returned (%v, %v), want (result, nil)", result, err)
 	}
 
 	withConvergence := optimizationConfig(2, 79, sphere)
 	withConvergence.Convergence = &ConvergenceConfig{}
+	withConvergence.MaxIterations = 1
 
 	result, err = Optimize(withConvergence)
-	if result != nil || err == nil {
-		t.Fatalf("convergence config returned (%v, %v), want (nil, not implemented error)", result, err)
+	if result == nil || err != nil {
+		t.Fatalf("convergence config returned (%v, %v), want (result, nil)", result, err)
 	}
 }
 

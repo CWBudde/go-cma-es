@@ -28,9 +28,15 @@ func loaderTestConfig() *Config {
 	config.EnableParallel = true
 	config.Convergence = &ConvergenceConfig{
 		TargetCost:           &target,
+		TolX:                 1e-9,
+		TolFun:               1e-10,
+		TolXUp:               1e3,
+		ConditionCov:         1e12,
 		MinImprovement:       0.001,
 		StagnationIterations: 17,
 		MinIterations:        4,
+		NoEffectAxis:         true,
+		NoEffectCoord:        true,
 	}
 	config.Constraints = &ConstraintConfig{
 		Handling:          ConstraintHandlingPenalty,
