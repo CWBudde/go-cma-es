@@ -340,10 +340,13 @@ func noEffectAxis(state *strategyState, iteration int) bool {
 	}
 
 	axis := (iteration - 1) % len(state.m)
-	if state.mode == CovarianceSeparable {
+	switch state.mode {
+	case CovarianceSeparable:
 		step := 0.1 * state.sigma * state.d[axis]
 
 		return state.m[axis]+step == state.m[axis]
+	case CovarianceBlock:
+		return !blockAxisStepHasEffect(state, axis)
 	}
 
 	for coordinate, mean := range state.m {
@@ -370,9 +373,19 @@ func noEffectCoord(state *strategyState) bool {
 }
 
 func (state *strategyState) diagonalVariance(coordinate int) float64 {
-	if state.mode == CovarianceSeparable {
+	switch state.mode {
+	case CovarianceSeparable:
 		return state.diagonal[coordinate]
-	}
+	case CovarianceBlock:
+		block := state.coordinateBlock[coordinate]
+		local := state.coordinateLocal[coordinate]
 
-	return state.c[coordinate][coordinate]
+		return state.blockC[block][local][local]
+	default:
+		if state.c == nil {
+			return 1
+		}
+
+		return state.c[coordinate][coordinate]
+	}
 }

@@ -27,7 +27,9 @@ func loaderTestConfig() *Config {
 	config.MaxEvaluations = 456
 	config.MaxWorkers = 3
 	config.BoundaryMethod = BoundaryReflect
-	config.CovarianceMode = CovarianceSeparable
+	config.CovarianceMode = CovarianceBlock
+	config.BlockGroups = [][]int{{0, 2, 4}, {1, 3}}
+	config.BlockSize = 0
 	config.EnableParallel = true
 	config.Convergence = &ConvergenceConfig{
 		TargetCost:           &target,
@@ -233,7 +235,7 @@ func TestSaveConfigUsesSnakeCaseAndOmitsFunctions(t *testing.T) {
 
 	for _, key := range []string{
 		"initial_mean", "initial_sigma", "problem_size", "active_cma",
-		"lower_bounds", "upper_bounds", "format_version",
+		"lower_bounds", "upper_bounds", "block_groups", "block_size", "format_version",
 	} {
 		if _, found := raw[key]; !found {
 			t.Errorf("saved config is missing key %q", key)

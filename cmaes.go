@@ -13,15 +13,24 @@ import (
 )
 
 // strategyState is the mutable CMA-ES distribution. Full covariance uses c
-// and b, with eigenvectors in the columns of b. Separable covariance leaves
-// both dense matrices nil and stores only the covariance diagonal.
+// and b, with eigenvectors in the columns of b. Separable covariance stores
+// only diagonal and d. Block covariance stores independently decomposed small
+// matrices in blockC, blockB, and blockD.
 type strategyState struct {
-	mode   CovarianceMode
-	m      []float64
-	psigma []float64
-	pc     []float64
-	c      [][]float64
-	b      [][]float64
+	mode            CovarianceMode
+	m               []float64
+	psigma          []float64
+	pc              []float64
+	c               [][]float64
+	b               [][]float64
+	blockGroups     [][]int
+	blockC          [][][]float64
+	blockB          [][][]float64
+	blockD          [][]float64
+	coordinateBlock []int
+	coordinateLocal []int
+	pendingBlockB   [][][]float64
+	pendingBlockD   [][]float64
 	// pendingB and pendingD hold the decomposition of c as it stands after the
 	// most recently completed iteration. Reporting needs it eagerly, and c does
 	// not change again before the next generation samples, so the lazy refresh
@@ -32,6 +41,10 @@ type strategyState struct {
 	d         []float64
 	sigma     float64
 	eigenEval int
+	// reportsBlocks marks a state that newBlockStrategyState canonicalized to
+	// a full or separable state. The math follows the canonical mode; only
+	// the reported snapshot keeps the block shape the caller configured.
+	reportsBlocks bool
 }
 
 type candidate struct {
@@ -274,11 +287,14 @@ func (run *optimizationRun) completeGeneration(
 // number history would become a step function that moves only when the lazy
 // decomposition happens to fire.
 //
-// The eager decomposition is not wasted work. The covariance does not change
-// again until the next iteration completes, so it is stored on the state and
-// the lazy refresh at the top of the next generation consumes it. The strategy
-// performs the same decomposition of the same matrix it always did, one
-// generation earlier, which keeps the run bit-identical.
+// The result is stored on the state, so the lazy refresh at the top of the
+// next generation consumes it instead of decomposing the same matrix again,
+// which keeps the run bit-identical. That only recovers the cost on the
+// generations where the refresh is actually due, which is roughly one in
+// lambda/(10*n*(c1+cmu)) of them; on the rest the decomposition is performed
+// for Result.ConditionNumberHistory alone and then discarded. In block mode
+// that makes it the dominant per-generation cost, so a caller that wants the
+// history cheaper should widen the blocks rather than expect amortization.
 //
 // The reported eigensystem is carried on a shallow copy so that state.b and
 // state.d keep describing the distribution the population was sampled from,
@@ -287,6 +303,19 @@ func (run *optimizationRun) reportedState() *strategyState {
 	if run.state.mode == CovarianceSeparable {
 		// Separable covariance maintains D exactly on every generation.
 		return run.state
+	}
+
+	if run.state.mode == CovarianceBlock {
+		vectors, scales, flatScales := decomposeBlocks(run.state.blockC)
+		run.state.pendingBlockB = vectors
+		run.state.pendingBlockD = scales
+
+		reported := *run.state
+		reported.blockB = vectors
+		reported.blockD = scales
+		reported.d = flatScales
+
+		return &reported
 	}
 
 	values, vectors := symmetricEigendecomposition(run.state.c)
@@ -377,10 +406,17 @@ func resolveRandomSource(config *Config) (*rand.Rand, int64, bool) {
 }
 
 func newStrategyState(config *Config) *strategyState {
-	if config.CovarianceMode == CovarianceSeparable {
+	switch config.CovarianceMode {
+	case CovarianceSeparable:
 		return newSeparableStrategyState(config)
+	case CovarianceBlock:
+		return newBlockStrategyState(config)
+	default:
+		return newFullStrategyState(config)
 	}
+}
 
+func newFullStrategyState(config *Config) *strategyState {
 	d := make([]float64, config.ProblemSize)
 	for index := range d {
 		d[index] = 1
@@ -429,11 +465,14 @@ func samplePopulation(state *strategyState, populationSize int, rng *rand.Rand) 
 }
 
 func transformStrategyNormal(state *strategyState, z []float64) []float64 {
-	if state.mode == CovarianceSeparable {
+	switch state.mode {
+	case CovarianceSeparable:
 		return transformSeparableNormal(state.d, z)
+	case CovarianceBlock:
+		return transformBlockNormal(state, z)
+	default:
+		return transformNormal(state.b, state.d, z)
 	}
-
-	return transformNormal(state.b, state.d, z)
 }
 
 func applyInitialPopulation(
@@ -616,11 +655,14 @@ func updateDistribution(
 }
 
 func inverseCovarianceSquareRootProduct(state *strategyState, step []float64) []float64 {
-	if state.mode == CovarianceSeparable {
+	switch state.mode {
+	case CovarianceSeparable:
 		return inverseSeparableSquareRootProduct(state.d, step)
+	case CovarianceBlock:
+		return inverseBlockSquareRootProduct(state, step)
+	default:
+		return inverseSquareRootProduct(state.b, state.d, step)
 	}
-
-	return inverseSquareRootProduct(state.b, state.d, step)
 }
 
 func recombine(population []candidate, weights []float64) ([]float64, []float64) {
@@ -732,6 +774,12 @@ func updateStrategyCovariance(
 		return
 	}
 
+	if state.mode == CovarianceBlock {
+		updateBlockCovariance(state, population, hSigma, parameters)
+
+		return
+	}
+
 	updateCovariance(state.c, state.pc, population, hSigma, parameters)
 
 	for index, weight := range parameters.negativeWeights {
@@ -757,6 +805,28 @@ func refreshEigensystemIfStale(
 		(10 * float64(len(state.m)) * (parameters.c1 + parameters.cmu))
 	if float64(evaluations-state.eigenEval) <= stalenessLimit {
 		return false
+	}
+
+	if state.mode == CovarianceBlock {
+		vectors := state.pendingBlockB
+		scales := state.pendingBlockD
+
+		var flatScales []float64
+		if vectors == nil {
+			vectors, scales, flatScales = decomposeBlocks(state.blockC)
+		} else {
+			flatScales = make([]float64, 0, len(state.m))
+			for _, blockScales := range scales {
+				flatScales = append(flatScales, blockScales...)
+			}
+		}
+
+		state.blockB = vectors
+		state.blockD = scales
+		copy(state.d, flatScales)
+		state.eigenEval = evaluations
+
+		return true
 	}
 
 	values := state.pendingD

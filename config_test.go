@@ -127,6 +127,20 @@ func TestConfigurationPresets(t *testing.T) {
 	}
 }
 
+func TestNewBlockDiagonalConfig(t *testing.T) {
+	config := NewBlockDiagonalConfig(14, 7)
+
+	if config.CovarianceMode != CovarianceBlock || config.BlockSize != 7 {
+		t.Errorf("block preset = (mode %q, size %d), want (%q, 7)",
+			config.CovarianceMode, config.BlockSize, CovarianceBlock)
+	}
+
+	if config.Lambda != defaultPopulationSize(14) || config.InitialSigma != defaultInitialSigma {
+		t.Errorf("block preset changed core defaults: lambda=%d sigma=%g",
+			config.Lambda, config.InitialSigma)
+	}
+}
+
 // TestDerivedStrategyParametersGolden pins the output of
 // deriveStrategyParameters against future drift. The expected values are NOT
 // published constants: Hansen's tutorial (arXiv:1604.00772) gives formulas, not

@@ -18,9 +18,8 @@ optimization library, and the third in a family with
 | **block-CMA-ES** | Same, block-structured parameters         | `CovarianceMode = "block"`     |
 | **IPOP / BIPOP** | Multimodal, restart strategies            | `OptimizeWithRestarts`         |
 
-**Current status**: nothing is released. **Phases 0–7 and 12 are complete**, including
-IPOP/BIPOP restarts and the WebAssembly showcase; block-diagonal covariance is not
-implemented yet.
+**Current status**: nothing is released. **Phases 0–9 and 12 are complete**, including
+block-diagonal covariance, IPOP/BIPOP restarts, and the WebAssembly showcase.
 
 **PLAN.md is the single source of truth for progress.** Before starting work, read
 PLAN.md and check which boxes are ticked. Do not infer status from this file or from

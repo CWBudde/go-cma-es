@@ -338,16 +338,7 @@ func coordinateVariances(state *strategyState) []float64 {
 	variances := make([]float64, len(state.m))
 
 	for coordinate := range variances {
-		diagonal := 1.0
-
-		switch {
-		case state.mode == CovarianceSeparable:
-			diagonal = state.diagonal[coordinate]
-		case state.c != nil:
-			diagonal = state.c[coordinate][coordinate]
-		}
-
-		variances[coordinate] = state.sigma * state.sigma * diagonal
+		variances[coordinate] = state.sigma * state.sigma * state.diagonalVariance(coordinate)
 	}
 
 	return variances

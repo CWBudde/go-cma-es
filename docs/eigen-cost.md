@@ -56,9 +56,10 @@ the eigenbasis lazily, so this cost is amortized over many renders.
 
 At n=200 the decomposition is already about a quarter second. At n=1000,
 77.82 seconds per refresh makes dense covariance operationally inappropriate;
-`NewHighDimensionalConfig` and separable covariance are mandatory at that
-scale. Block covariance, planned for v0.2.0, will provide a middle ground for
-structured problems.
+`NewHighDimensionalConfig` and separable covariance are appropriate when axes
+are independent. `NewBlockDiagonalConfig` provides the middle ground for
+structured problems whose correlations stay inside small parameter groups; see
+`blockdiag-cost.md` for the n=14,000 measurement.
 
 Renderer comparison values come from the same-host table in
 `../MayFlyCircleFit/docs/cpu-performance-history.md`; remeasure both workloads

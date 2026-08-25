@@ -49,6 +49,10 @@ const (
 	CovarianceFull CovarianceMode = "full"
 	// CovarianceSeparable learns only the diagonal covariance entries.
 	CovarianceSeparable CovarianceMode = "separable"
+	// CovarianceBlock learns an independent dense covariance matrix for each
+	// configured coordinate block. It captures within-block correlations while
+	// retaining linear storage when block sizes stay bounded.
+	CovarianceBlock CovarianceMode = "block"
 )
 
 // ConstraintHandlingMethod selects how constrained candidates are ranked.
@@ -203,6 +207,10 @@ type Config struct {
 	BoundaryMethod BoundaryMethod `json:"boundary_method"`
 	CovarianceMode CovarianceMode `json:"covariance_mode"`
 	InitialMean    []float64      `json:"initial_mean"`
+	// BlockGroups optionally assigns coordinates to non-contiguous covariance
+	// blocks. When set in block mode, it must partition [0, ProblemSize) and
+	// takes precedence over BlockSize.
+	BlockGroups [][]int `json:"block_groups"`
 
 	// LowerBounds and UpperBounds give each coordinate its own search interval.
 	// A nil slice means the corresponding scalar bound broadcasts to every
@@ -232,6 +240,10 @@ type Config struct {
 	// MaxWorkers caps the goroutines used when EnableParallel is true. Zero
 	// means runtime.NumCPU(); it is what the constructors record explicitly.
 	MaxWorkers int `json:"max_workers"`
+
+	// BlockSize partitions coordinates into consecutive blocks in block mode.
+	// The final block may be shorter. It is ignored when BlockGroups is set.
+	BlockSize int `json:"block_size"`
 
 	ActiveCMA      bool `json:"active_cma"`
 	EnableParallel bool `json:"enable_parallel"`

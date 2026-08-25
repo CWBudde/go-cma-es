@@ -2,10 +2,10 @@
 
 Module: `github.com/CWBudde/go-cma-es`
 Package: `cmaes` (flat, at the repository root)
-Status: **Phases 0–7 and 12 complete.** Full and separable CMA-ES, active covariance
-adaptation, boundary handling, nonlinear constraints, convergence criteria, lifecycle
-observers, IPOP/BIPOP restarts, and the WebAssembly showcase are implemented. Nothing is
-released.
+Status: **Phases 0–9 and 12 complete.** Full, separable, and block-diagonal CMA-ES,
+active covariance adaptation, boundary handling, nonlinear constraints, convergence
+criteria, lifecycle observers, IPOP/BIPOP restarts, and the WebAssembly showcase are
+implemented. Nothing is released.
 
 This document is the roadmap and the single source of truth for progress. It is organised
 the same way as the sibling [Mayfly](https://github.com/cwbudde/mayfly) and
@@ -314,14 +314,16 @@ covers both the many-short and few-long regimes the ladder had to choose between
 
 ---
 
-## Phase 8 — Block-diagonal covariance (v0.2.0)
+## Phase 8 — Block-diagonal covariance (v0.2.0) ✅
 
-- [ ] `blockdiag.go`: `CovarianceMode = "block"` with a configurable `BlockSize`, one k×k
+- [x] `blockdiag.go`: `CovarianceMode = "block"` with a configurable `BlockSize`, one k×k
       covariance per block, each decomposed independently
-- [ ] Record measured cost at n = 14000, k = 7: `O(n·k)` memory, `O(n·k²)` per sample,
-      `O((n/k)·k³)` per decomposition
-- [ ] Optional `BlockGroups [][]int` for non-contiguous groupings
-- [ ] Tests: recovers a block-structured ellipsoid that sep-CMA cannot; degenerates exactly
+- [x] Record measured cost at n = 14000, k = 7: `O(n·k)` memory and per-sample work,
+      `O((n/k)·k³) = O(n·k²)` per full decomposition. The earlier `O(n·k²)` per-sample
+      estimate double-counted the number of blocks; each of the `n/k` blocks performs a
+      k×k matrix-vector product. See `docs/blockdiag-cost.md`.
+- [x] Optional `BlockGroups [][]int` for non-contiguous groupings
+- [x] Tests: recovers a block-structured ellipsoid that sep-CMA cannot; degenerates exactly
       to full CMA at `BlockSize == n` and to sep-CMA at `BlockSize == 1`
 
 **Rationale**: The consumer's cost is near-additive per circle and its conditioning lies
@@ -332,23 +334,23 @@ they give it a reference to be correct against.
 
 ---
 
-## Phase 9 — MayFlyCircleFit adapter
+## Phase 9 — MayFlyCircleFit adapter ✅
 
 Lands in the consuming repository as its PLAN.md Phase 19, on a topic branch and through a
-pull request — its `main` is protected.
+pull request — its `main` is protected. See ../MayFlyCircleFit
 
-- [ ] `internal/opt/cmaes_adapter.go`, modelled on `dragonfly_adapter.go`: `CMAESAdapter`,
+- [x] `internal/opt/cmaes_adapter.go`, modelled on `dragonfly_adapter.go`: `CMAESAdapter`,
       `NewCMAES(maxIters, popSize, seed, ...CMAESOption)`, `WithCMAESLogger`,
       `WithCMAESEarlyStop`, `WithCMAESParallelEvaluation`
-- [ ] Implement `Optimizer`, `LifecycleOptimizer`, `IterationBudgetOptimizer`; honour
+- [x] Implement `Optimizer`, `LifecycleOptimizer`, `IterationBudgetOptimizer`; honour
       `RunOptions.Initial` (→ `WithInitialMean`), `AdditionalSeeds`, `SeedOffset`,
       `ResumeCount`, `Observer`, `ProgressMapper`, `EpochObserver`
-- [ ] Map `Problem.Repair` and `Problem.Inequalities` onto the Phase 4 surface
-- [ ] Pin the module version in `internal/opt/version.go` and extend `resume_guard.go` so a
+- [x] Map `Problem.Repair` and `Problem.Inequalities` onto the Phase 4 surface
+- [x] Pin the module version in `internal/opt/version.go` and extend `resume_guard.go` so a
       checkpoint written under one version is refused by another
-- [ ] Satisfy `optimizer_contract_test.go` and `parallel_evaluation_test.go` unchanged; add
+- [x] Satisfy `optimizer_contract_test.go` and `parallel_evaluation_test.go` unchanged; add
       `TestCMAESParallelEvaluationMatchesSerial`
-- [ ] **Decide and document** whether the consumer's `WithRestarts` wraps the adapter or
+- [x] **Decide and document** whether the consumer's `WithRestarts` wraps the adapter or
       the adapter uses this library's IPOP internally
 
 **Rationale**: `opt.Optimizer` is a proven seam — Dragonfly went through it without

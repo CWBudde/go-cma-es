@@ -8,7 +8,8 @@
 // step that is correct along one axis is not forced to be equally large along
 // every other. Active covariance adaptation is enabled by default. Separable
 // mode learns coordinate scaling with linear time and storage when correlations
-// are unnecessary.
+// are unnecessary. Block-diagonal mode learns correlations inside bounded-size
+// contiguous or explicitly grouped parameter blocks with O(n*k) storage.
 // A swarm with an isotropic, externally scheduled step size needs O(cond)
 // evaluations on a conditioned ellipsoid where CMA-ES needs O(log cond).
 //
@@ -25,11 +26,11 @@
 //
 // # Status
 //
-// This package is under construction. Active full-covariance and separable
-// strategies, box-boundary handling, nonlinear constraints, convergence
-// criteria, lifecycle observers, IPOP/BIPOP restarts, and the WebAssembly
-// showcase are implemented; PLAN.md in the repository root is the single
-// source of truth for later variant work.
+// This package is under construction. Active full-covariance, separable, and
+// block-diagonal strategies, box-boundary handling, nonlinear constraints,
+// convergence criteria, lifecycle observers, IPOP/BIPOP restarts, and the
+// WebAssembly showcase are implemented; PLAN.md in the repository root is the
+// single source of truth for later integration work.
 //
 // # Conventions
 //

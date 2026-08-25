@@ -6,10 +6,10 @@ Strategy** (CMA-ES), following Hansen's tutorial (arXiv:1604.00772).
 Third in a family with [Mayfly](https://github.com/cwbudde/mayfly) and
 [Dragonfly](https://github.com/CWBudde/dragonfly), and deliberately unlike both of them.
 
-> **Status: under construction.** Phases 0–7 and 12 provide active full-covariance
-> CMA-ES, sep-CMA-ES, box-boundary handling, nonlinear constraints, convergence
-> criteria, lifecycle observers, IPOP/BIPOP restarts, and a WebAssembly showcase.
-> Block-diagonal covariance remains a later phase.
+> **Status: under construction.** Phases 0–9 and 12 provide active full-covariance,
+> separable, and block-diagonal CMA-ES, box-boundary handling, nonlinear constraints,
+> convergence criteria, lifecycle observers, IPOP/BIPOP restarts, and a WebAssembly
+> showcase.
 > [`PLAN.md`](PLAN.md) is the source of truth for progress.
 
 ## Why
@@ -37,15 +37,15 @@ CMA-ES answers both halves of that:
 
 ## Features and roadmap
 
-| Feature                     | Status  | Purpose                                                          |
-| --------------------------- | ------- | ---------------------------------------------------------------- |
-| Full-covariance CMA-ES      | ready   | the standard strategy, `n` up to a few hundred                   |
-| Active CMA                  | ready   | guarded negative rank-µ weights; the modern reference default    |
-| sep-CMA-ES                  | ready   | diagonal covariance, `O(n)` per sample, for large `n`            |
-| Block-diagonal CMA-ES       | planned | one small block per parameter group; matches structured problems |
-| IPOP / BIPOP restarts       | ready   | shared-budget restart strategies for multimodal problems         |
-| Deterministic parallel eval | ready   | bit-identical to a serial run of the same seed                   |
-| WebAssembly demo            | ready   | watch the covariance ellipse align with the valley               |
+| Feature                     | Status | Purpose                                                          |
+| --------------------------- | ------ | ---------------------------------------------------------------- |
+| Full-covariance CMA-ES      | ready  | the standard strategy, `n` up to a few hundred                   |
+| Active CMA                  | ready  | guarded negative rank-µ weights; the modern reference default    |
+| sep-CMA-ES                  | ready  | diagonal covariance, `O(n)` per sample, for large `n`            |
+| Block-diagonal CMA-ES       | ready  | one small block per parameter group; matches structured problems |
+| IPOP / BIPOP restarts       | ready  | shared-budget restart strategies for multimodal problems         |
+| Deterministic parallel eval | ready  | bit-identical to a serial run of the same seed                   |
+| WebAssembly demo            | ready  | watch the covariance ellipse align with the valley               |
 
 ## Live demo
 
@@ -105,6 +105,28 @@ For high-dimensional problems whose important scaling is coordinate-aligned, use
 covariance diagonal, requires no eigendecomposition, and takes `O(n)` time and storage
 per sample. It cannot learn rotated correlations; use full covariance when those matter.
 The reproducible n=200 benchmark is `BenchmarkCovarianceModesN200`.
+
+For high-dimensional problems with correlations confined to small parameter groups, use
+block-diagonal covariance. Consecutive groups need only a block size:
+
+```go
+config := cmaes.NewBlockDiagonalConfig(14_000, 7)
+```
+
+For non-contiguous groups, set an exact partition of all coordinate indices. Explicit
+groups take precedence over `BlockSize`:
+
+```go
+config := cmaes.NewBlockDiagonalConfig(9, 0)
+config.BlockGroups = [][]int{{0, 3, 6}, {1, 4, 7}, {2, 5, 8}}
+```
+
+Block mode uses `O(n*k)` matrix storage and sampling work for maximum block size `k`,
+while decomposing all blocks costs `O(n*k^2)`. `BlockSize == n` is bit-identical to full
+CMA-ES and `BlockSize == 1` is bit-identical to sep-CMA-ES. A distribution observer
+receives the sparse eigensystems in `DistributionSnapshot.Blocks`; its dense
+`Eigenvectors` field is nil in a genuine block run. See
+[`docs/blockdiag-cost.md`](docs/blockdiag-cost.md) for the n=14,000, k=7 measurement.
 
 The default `BoundaryPenalty` method uses Hansen's smooth linear/quadratic transformation
 to evaluate every candidate inside the box while retaining its latent Gaussian step for

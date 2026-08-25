@@ -44,20 +44,36 @@ type PopulationSnapshot struct {
 // registered Logger; it never aborts the run.
 type PopulationObserver func(PopulationSnapshot)
 
+// BlockDistributionSnapshot describes one independently adapted covariance
+// block. Coordinates maps its matrix rows to problem coordinates;
+// Eigenvalues contains the block's axis scales D, and Eigenvectors contains B
+// with the corresponding eigenvectors in its columns.
+type BlockDistributionSnapshot struct {
+	Coordinates  []int
+	Eigenvalues  []float64
+	Eigenvectors [][]float64
+}
+
 // DistributionSnapshot describes the sampling distribution after a completed
-// iteration. Eigenvalues contains D, the square roots of C's eigenvalues, and
-// Eigenvectors contains B with eigenvectors in its columns.
+// iteration. Eigenvalues contains D, the square roots of C's eigenvalues. For
+// full and separable covariance, Eigenvectors contains the dense B matrix. For
+// block covariance it remains nil and Blocks carries the sparse representation,
+// avoiding an O(n^2) observer allocation for an O(n*k) strategy. That holds for
+// every block configuration, including the BlockSize of one or of ProblemSize
+// that the strategy runs as separable or full covariance internally.
 //
-// All five distribution fields describe the same iteration: B and D are
+// All distribution fields describe the same iteration: B and D are
 // decomposed from the covariance that Mean and Sigma were updated with, not
 // from the strategy's lazily refreshed eigensystem, so the ellipse this
 // snapshot describes is the one the iteration actually ended with. The same
 // eigensystem produces ConditionNumber and the matching entry of
 // Result.ConditionNumberHistory.
 type DistributionSnapshot struct {
-	Mean            []float64
-	Eigenvalues     []float64
-	Eigenvectors    [][]float64
+	Mean         []float64
+	Eigenvalues  []float64
+	Eigenvectors [][]float64
+	Blocks       []BlockDistributionSnapshot
+
 	Sigma           float64
 	ConditionNumber float64
 	Iteration       int
@@ -340,8 +356,17 @@ func distributionSnapshot(
 	state *strategyState,
 	iteration, evaluations int,
 ) DistributionSnapshot {
+	var blocks []BlockDistributionSnapshot
+
 	eigenvectors := state.b
-	if state.mode == CovarianceSeparable {
+
+	switch {
+	case state.mode == CovarianceBlock:
+		blocks = blockDistributionSnapshots(state)
+	case state.reportsBlocks:
+		blocks = canonicalizedBlockSnapshots(state)
+		eigenvectors = nil
+	case state.mode == CovarianceSeparable:
 		eigenvectors = separableEigenvectors(len(state.m))
 	}
 
@@ -349,6 +374,7 @@ func distributionSnapshot(
 		Mean:            append([]float64(nil), state.m...),
 		Eigenvalues:     append([]float64(nil), state.d...),
 		Eigenvectors:    clonePositions(eigenvectors),
+		Blocks:          blocks,
 		Sigma:           state.sigma,
 		ConditionNumber: covarianceConditionNumber(state.d),
 		Iteration:       iteration,

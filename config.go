@@ -93,6 +93,18 @@ func NewSeparableConfig(problemSize int) *Config {
 	return config
 }
 
+// NewBlockDiagonalConfig creates a default configuration whose covariance is
+// split into consecutive blocks of blockSize coordinates. The final block may
+// be shorter. Set BlockGroups to an explicit partition for non-contiguous
+// parameter groups.
+func NewBlockDiagonalConfig(problemSize, blockSize int) *Config {
+	config := NewDefaultConfig(problemSize)
+	config.CovarianceMode = CovarianceBlock
+	config.BlockSize = blockSize
+
+	return config
+}
+
 // NewHighDimensionalConfig creates a separable configuration with a longer run
 // cap for problems where a dense covariance matrix is impractical.
 func NewHighDimensionalConfig(problemSize int) *Config {
@@ -154,8 +166,14 @@ func deriveStrategyParameters(config *Config) strategyParameters {
 	c1 := 2 / ((n+1.3)*(n+1.3) + muEff)
 
 	cmu := math.Min(1-c1, 2*(muEff-2+1/muEff)/((n+2)*(n+2)+muEff))
-	if config.CovarianceMode == CovarianceSeparable {
-		cmu = math.Min(1-c1, cmu*(n+2)/3)
+	blockDimension := covarianceBlockDimension(config)
+
+	if blockDimension < config.ProblemSize {
+		// Ros and Hansen's separable correction is the block-size-one end
+		// point of this factor. A bounded block has only blockDimension
+		// covariance directions to learn, so it need not retain the dense
+		// n-dimensional rank-mu rate.
+		cmu = math.Min(1-c1, cmu*(n+2)/float64(blockDimension+2))
 	}
 
 	var negativeWeights []float64
@@ -370,11 +388,12 @@ func validateModes(config *Config) error {
 
 	switch config.CovarianceMode {
 	case CovarianceFull, CovarianceSeparable:
+		return nil
+	case CovarianceBlock:
+		return validateBlockConfiguration(config)
 	default:
 		return fmt.Errorf("unknown covariance_mode %q", config.CovarianceMode)
 	}
-
-	return nil
 }
 
 func validateConvergenceConfig(config *ConvergenceConfig, maxIterations int) error {

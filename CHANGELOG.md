@@ -43,6 +43,10 @@ refuse to resume across it.
   random restart means and per-run seeds; large/small BIPOP budget accounting; and
   `RestartResult` records containing each run's population, allocation, best solution,
   and termination reason (Phase 7).
+- Block-diagonal covariance with consecutive `BlockSize` partitions and optional
+  non-contiguous `BlockGroups`; independently decomposed small matrices, sparse lifecycle
+  snapshots, learning-rate scaling by maximum block width, bit-exact full/separable
+  endpoints, and the recorded n=14,000, k=7 cost (Phase 8).
 - A framework-free WebAssembly showcase with four contour-shaded objectives, replayable
   population and 2σ covariance views, a same-seed/same-budget isotropic comparison,
   aligned cost/σ/condition telemetry, public-API IPOP population doubling, reproducible
