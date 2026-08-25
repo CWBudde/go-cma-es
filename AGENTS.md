@@ -18,8 +18,9 @@ optimization library, and the third in a family with
 | **block-CMA-ES** | Same, block-structured parameters         | `CovarianceMode = "block"`     |
 | **IPOP / BIPOP** | Multimodal, restart strategies            | `OptimizeWithRestarts`         |
 
-**Current status**: nothing is released. **Phase 6 (sep-CMA-ES and active CMA) is
-complete**; restart and block-diagonal variants are not implemented yet.
+**Current status**: nothing is released. **Phases 0–6 and 12 are complete**, including
+the WebAssembly showcase; restart and block-diagonal library variants are not implemented
+yet.
 
 **PLAN.md is the single source of truth for progress.** Before starting work, read
 PLAN.md and check which boxes are ticked. Do not infer status from this file or from
@@ -70,22 +71,22 @@ treefmt runs with `--allow-missing-formatter`, so a missing formatter is silent.
 Planned file layout, in dependency order. A file is listed here once PLAN.md's
 corresponding phase is complete.
 
-| File             | Contents                                                        |
-| ---------------- | --------------------------------------------------------------- |
-| `doc.go`         | package documentation                                           |
-| `version.go`     | `Version`, for a consumer's checkpoint/resume guard             |
-| `types.go`       | `Config`, `Result`, `Best`, `TerminationReason`                 |
-| `config.go`      | `NewDefaultConfig` and preset factories, Hansen's parameter set |
-| `config_loader.go` | versioned JSON persistence for `Config`                       |
-| `eigen.go`       | cyclic Jacobi eigendecomposition for real symmetric matrices    |
-| `matrix.go`      | dense matrix helpers used by covariance adaptation              |
-| `cmaes.go`       | the strategy itself: sampling, recombination, CSA, C update     |
-| `boundary.go`    | box handling; `constraints.go` for Deb rules and penalties      |
-| `convergence.go` | the stopping criteria; `lifecycle.go` for observers and options |
-| `monitoring.go`  | structured lifecycle logging only; the histories live on `Result` |
-| `separable.go`   | sep-CMA-ES; `active.go` for negative rank-µ weights             |
-| `blockdiag.go`   | block-diagonal covariance                                       |
-| `restart.go`     | IPOP and BIPOP                                                  |
+| File               | Contents                                                          |
+| ------------------ | ----------------------------------------------------------------- |
+| `doc.go`           | package documentation                                             |
+| `version.go`       | `Version`, for a consumer's checkpoint/resume guard               |
+| `types.go`         | `Config`, `Result`, `Best`, `TerminationReason`                   |
+| `config.go`        | `NewDefaultConfig` and preset factories, Hansen's parameter set   |
+| `config_loader.go` | versioned JSON persistence for `Config`                           |
+| `eigen.go`         | cyclic Jacobi eigendecomposition for real symmetric matrices      |
+| `matrix.go`        | dense matrix helpers used by covariance adaptation                |
+| `cmaes.go`         | the strategy itself: sampling, recombination, CSA, C update       |
+| `boundary.go`      | box handling; `constraints.go` for Deb rules and penalties        |
+| `convergence.go`   | the stopping criteria; `lifecycle.go` for observers and options   |
+| `monitoring.go`    | structured lifecycle logging only; the histories live on `Result` |
+| `separable.go`     | sep-CMA-ES; `active.go` for negative rank-µ weights               |
+| `blockdiag.go`     | block-diagonal covariance                                         |
+| `restart.go`       | IPOP and BIPOP                                                    |
 
 **No third-party numerics.** The eigendecomposition is written here, in `eigen.go`,
 rather than pulled from gonum. That is a deliberate constraint inherited from the sibling

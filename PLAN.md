@@ -2,9 +2,9 @@
 
 Module: `github.com/CWBudde/go-cma-es`
 Package: `cmaes` (flat, at the repository root)
-Status: **Phase 6 complete.** Full and separable CMA-ES, active covariance adaptation,
-boundary handling, nonlinear constraints, convergence criteria, and lifecycle observers
-are implemented. Nothing is released.
+Status: **Phases 0–6 and 12 complete.** Full and separable CMA-ES, active covariance
+adaptation, boundary handling, nonlinear constraints, convergence criteria, lifecycle
+observers, and the WebAssembly showcase are implemented. Nothing is released.
 
 This document is the roadmap and the single source of truth for progress. It is organised
 the same way as the sibling [Mayfly](https://github.com/cwbudde/mayfly) and
@@ -55,8 +55,10 @@ CMA-ES supplies the two capabilities none of those contenders has:
    bool). Factory functions (`NewDefaultConfig`, `NewSeparableConfig`, …) layer presets on
    top.
 4. **Explicit RNG threading.** Every stochastic helper takes `rng *rand.Rand` as its last
-   parameter. `Config.Rand` is the injection point; when nil, `OptimizeContext` creates
-   one, writes it back to the config, and records the seed in `Result.Seed`.
+   parameter. `Config.Rand` is the injection point; when nil, `OptimizeContext` creates a
+   run-local generator, never writes to `Config`, and records the seed in `Result.Seed`.
+   `Config` is read-only for the duration of a run, so the same configuration can be
+   optimized twice — which `OptimizeWithRestarts` (Phase 7) depends on.
 5. **Deterministic parallelism.** All RNG draws happen on the calling goroutine during a
    `prepare*` phase; worker goroutines only evaluate the objective. A seeded run must
    produce bit-identical results with `EnableParallel` on or off.
@@ -147,7 +149,7 @@ Three details that are easy to get wrong and must each be covered by a unit test
 
 Deferred out of this phase, deliberately:
 
-- [ ] `.github/workflows/wasm-demo-pages.yml` — lands in Phase 12 with the demo it
+- [x] `.github/workflows/wasm-demo-pages.yml` — lands in Phase 12 with the demo it
       publishes. Committing it now would add a workflow that fails on every push.
 
 **Rationale**: A contributor moving between the three repos should not have to relearn
@@ -400,27 +402,27 @@ CMA-ES report that did not meet the same bar would be worth less than no report.
 
 ---
 
-## Phase 12 — WebAssembly demo
+## Phase 12 — WebAssembly demo ✅
 
 Follows the sibling pattern exactly: a nested `go.mod`, `main.go` behind
 `//go:build js && wasm` with a `main_stub.go` for the native build, a `bridge.go`
 marshalling layer, plain JS and canvas — no framework, no bundler.
 **Depends only on Phases 1–5.**
 
-- [ ] `examples/wasm-demo/go.mod` with a `replace` onto the parent module;
+- [x] `examples/wasm-demo/go.mod` with a `replace` onto the parent module;
       `scripts/build-wasm-demo.sh`; `boot.js` loading `wasm_exec.js`
-- [ ] `landscape.go` + `render.js`: contour-shaded 2-D landscapes — Rosenbrock,
+- [x] `landscape.go` + `render.js`: contour-shaded 2-D landscapes — Rosenbrock,
       conditioned ellipsoid, Rastrigin, Himmelblau
-- [ ] `index.html` — the headline view: the sampled population, the mean, and the **2σ
+- [x] `index.html` — the headline view: the sampled population, the mean, and the **2σ
       covariance ellipse** drawn from `DistributionSnapshot`. Play/pause/step, seed box,
       λ and σ₀ controls
-- [ ] `compare.html` — CMA-ES against a fixed isotropic step, same seed, same budget, side
+- [x] `compare.html` — CMA-ES against a fixed isotropic step, same seed, same budget, side
       by side on the condition-1e6 ellipsoid
-- [ ] `charts.html` — σ, condition number and best cost on one time axis
-- [ ] `restart.html` — IPOP: λ doubling across restarts, each restart's basin marked
-- [ ] `favicon.svg`, `style.css`, `README.md` matching the sibling demo's structure
-- [ ] `.github/workflows/wasm-demo-pages.yml` publishing to GitHub Pages
-- [ ] `just check-wasm-demo` already gates both build paths; drop its
+- [x] `charts.html` — σ, condition number and best cost on one time axis
+- [x] `restart.html` — IPOP: λ doubling across restarts, each restart's basin marked
+- [x] `favicon.svg`, `style.css`, `README.md` matching the sibling demo's structure
+- [x] `.github/workflows/wasm-demo-pages.yml` publishing to GitHub Pages
+- [x] `just check-wasm-demo` already gates both build paths; drop its
       does-not-exist-yet skip once the directory lands
 
 **Rationale**: The swarm demos can only show dots moving. CMA-ES can show _why_ it works —
@@ -448,7 +450,6 @@ Phases 0 → 5 are strictly sequential. After Phase 5 the graph opens up:
 
 Recorded honestly rather than silently dropped.
 
-- **`wasm-demo-pages.yml`** — deferred from Phase 0 to Phase 12; see that phase.
 - **Multi-objective CMA-ES (MO-CMA-ES).** Both siblings carry a multi-objective variant.
   This library does not plan one, because the consuming problem is single-objective.
   Revisit only on a concrete use case.

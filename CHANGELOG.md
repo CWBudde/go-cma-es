@@ -27,8 +27,8 @@ refuse to resume across it.
   updates, lazy eigendecomposition, deterministic parallel evaluation, and the
   `Optimize` and `OptimizeContext` entry points (Phase 3).
 - Clamp, repeated-reflection, and Hansen linear/quadratic transformation boundary
-  handling, with the transformation plus a scale-adaptive remote-copy penalty as the
-  default; nonlinear inequality and equality constraints with Deb feasibility or
+  handling, with the transformation plus Hansen's adaptive per-coordinate `BoundPenalty`
+  as the default; nonlinear inequality and equality constraints with Deb feasibility or
   linear/quadratic penalty ranking (Phase 4).
 - Hansen's TolX, TolFun, TolXUp, covariance-condition and no-effect stopping criteria;
   target and stagnation termination; run-scoped initial population and mean seeding;
@@ -39,9 +39,86 @@ refuse to resume across it.
   by default; separable CMA-ES with diagonal-only `O(n)` sampling and covariance updates,
   the Ros-Hansen learning-rate correction, full/separable dispatch, and comparative
   performance and objective tests (Phase 6).
+- A framework-free WebAssembly showcase with four contour-shaded objectives, replayable
+  population and 2σ covariance views, a same-seed/same-budget isotropic comparison,
+  aligned cost/σ/condition telemetry, demo-layer IPOP population doubling, reproducible
+  build tooling, and GitHub Pages deployment (Phase 12).
+
+- Per-dimension `Config.LowerBounds` and `Config.UpperBounds`. The scalar `LowerBound` and
+  `UpperBound` still work and broadcast to every coordinate when the slices are nil.
+  Boundary handling, the linear/quadratic shoulder widths, and validation are now
+  resolved one coordinate at a time.
+- `Result.IterationBestHistory`, the best cost within each generation's population.
+  Unlike `ConvergenceCurve`, which is the running global best and therefore monotone, it
+  can rise, which is what makes an oscillation visible next to the sigma curve.
+- `Result` and `Best` now carry snake_case JSON tags, matching the configuration types.
+- Saved configuration files carry a `format_version`. A file without one is read as the
+  current version, so existing files still load.
+
+### Changed
+
+All of the following alter the search trajectory. A given seed no longer reproduces a run
+from an earlier revision, so under this project's rule they are breaking changes for
+reproducibility. `Version` stays at `0.0.0-dev` because nothing has been released yet;
+the first release must carry a `Version` that postdates them.
+
+- Covariance adaptation learns from the **sampled** step rather than the boundary-repaired
+  one, for the rank-µ terms and the active negative weights alike, in both the full and
+  the separable mode. Mean recombination and both evolution paths still follow the
+  repaired position. Affects `clamp` and `reflect` runs only; `penalty` never repaired a
+  genotype and is bit-identical to before.
+- The default boundary penalty is Hansen's adaptive `BoundPenalty`: per-coordinate weights
+  scaled by each coordinate's variance `σ²·C_ii`, adapted across generations, with the
+  out-of-bounds-mean term. It replaces a single interquartile-range-scaled scalar whose
+  degenerate fallback was a bare `1.0` in raw objective units.
+- The linear/quadratic shoulder margin is Hansen's `(1 + |b|)/20` rather than
+  `max(1, |b|)/20`. The two agree only for a bound at the origin; on `[-1, 1]` the
+  shoulder width goes from 0.05 to 0.10.
+- `TolX` is relative to the initial sigma, matching Hansen's `1e-12·σ⁽⁰⁾`, and the default
+  moved from `1e-11` to `1e-12`. It was previously absolute, so a problem started at a
+  small `InitialSigma` terminated on iteration 1.
+- `TolFun` uses the best-of-generation value over its window together with the current
+  generation's spread, rather than the full spread of every generation in the window.
+- `TolXUp` measures growth against the initial distribution extent `σ⁽⁰⁾·max(D⁽⁰⁾)`
+  instead of assuming `D⁽⁰⁾ = I`.
+- `Validate` now rejects an `InitialMean` outside the bounds, a positive `MaxEvaluations`
+  smaller than `Lambda`, and a `ConstraintConfig` that is configured but carries no
+  constraint functions. All three were previously accepted.
+- `IsFeasible` treats a negative aggregate violation as feasible and `NaN` as infeasible.
 
 ### Fixed
 
+- `Optimize` no longer writes the generated `*rand.Rand` back into the caller's `Config`.
+  A seeded configuration could previously be optimized only once — the second call failed
+  validation with "seed and Rand are mutually exclusive" — which would have broken
+  `OptimizeWithRestarts` and any consumer that reuses a configuration.
+- Active CMA no longer diverges on bound-active problems under `clamp` and `reflect`.
+  Negative rank-µ weights land on the worst candidates, which are the repaired ones, so
+  reflection folded their direction back toward the interior and the strategy subtracted
+  variance along the direction of the optimum. Measured on a bound-active problem,
+  `reflect` failed every one of 30 seeds under the shipped defaults.
+- A cancelled context no longer produces a different `Result` depending on
+  `EnableParallel`. A generation in which every candidate was evaluated is now completed
+  identically in both modes.
+- `DistributionSnapshot` and `ConditionNumberHistory` describe a single generation.
+  Eigenvectors and eigenvalues were taken from the lazily refreshed decomposition while
+  the mean and sigma were post-update, so the reported condition number was a step
+  function that only moved when the decomposition happened to refresh.
+- A non-positive eigenvalue is repaired to a small positive value rather than floored to
+  exactly zero. Zero left that axis with a step size of zero, killing the dimension for
+  the rest of the run and tripping the condition-number criterion immediately. A
+  genuinely ill-conditioned positive-definite covariance keeps its condition number and
+  can still trip `ConditionCov`.
+- A Jacobi eigendecomposition that fails to converge panics instead of silently returning
+  a half-diagonalized matrix.
+- `BetterConstrainedCandidate` is a strict weak ordering for every input. A `NaN`
+  violation was incomparable with everything, making equality non-transitive and the sort
+  order arbitrary.
+- Observer and logger panics are contained and reported rather than destroying the run.
+- Constraint functions lost across a JSON round-trip now fail loudly at `Validate` instead
+  of yielding a silently unconstrained run.
+- The per-iteration log event moved from info to debug level; a failed run emits a
+  terminal event, so every logged start has exactly one logged end.
 - The coverage gate no longer conflates "no statements to cover" with "0% covered";
   `go tool cover -func` reports 0.0% for both.
 
