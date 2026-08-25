@@ -54,7 +54,7 @@ Demo.start(function (info) {
     return true;
   }
 
-  function execute() {
+  function execute(autoplay) {
     transport.stop();
     Demo.setStatus("Computing the run…", "loading");
     if (!loadLandscape()) return;
@@ -63,8 +63,11 @@ Demo.start(function (info) {
     Demo.cacheSinks(runSinks, run, ["population", "mean", "ellipse", "bestTrail", "bestCost", "iterationBest", "sigma", "condition"]);
     Demo.$("tEvals").textContent = String(run.evaluations);
     Demo.$("tTermination").textContent = run.termination;
-    transport.reset(run.frames);
-    Demo.setStatus("Ready — drag the timeline or press play.", "ready");
+    transport.reset(run.frames, autoplay);
+    Demo.setStatus(
+      autoplay ? "Playing the run — scrub or pause any time." : "Ready — drag the timeline or press play.",
+      "ready",
+    );
   }
 
   select.addEventListener("change", () => {
@@ -72,6 +75,6 @@ Demo.start(function (info) {
     Demo.$("sigma").value = spec.sigma;
     execute();
   });
-  Demo.$("run").addEventListener("click", execute);
+  Demo.$("run").addEventListener("click", () => execute(true));
   execute();
 });

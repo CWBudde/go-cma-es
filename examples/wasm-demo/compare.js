@@ -32,7 +32,7 @@ Demo.start(function () {
     Demo.$("isoLive").textContent = Number(comparison.isoBestCost[Math.min(frame, comparison.isoBestCost.length - 1)]).toExponential(3);
   }
 
-  function execute() {
+  function execute(autoplay) {
     Demo.setStatus("Computing paired searches…", "loading");
     landscape = Demo.call("landscape", { landscape: "ellipsoid", width: 180, height: 180, out: landscapeSinks });
     if (!landscape) return;
@@ -51,10 +51,10 @@ Demo.start(function () {
     Demo.$("cmaFinal").textContent = Number(comparison.cmaBest).toExponential(4);
     Demo.$("isoFinal").textContent = Number(comparison.isoBest).toExponential(4);
     Demo.$("budget").textContent = `${comparison.budget} evaluations each`;
-    transport.reset(Math.max(comparison.cmaFrames, comparison.isoFrames));
+    transport.reset(Math.max(comparison.cmaFrames, comparison.isoFrames), autoplay);
     Demo.setStatus("Ready — identical normal draws, identical evaluation budget.", "ready");
   }
 
-  Demo.$("run").addEventListener("click", execute);
+  Demo.$("run").addEventListener("click", () => execute(true));
   execute();
 });

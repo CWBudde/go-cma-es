@@ -105,11 +105,15 @@ window.Demo = (function () {
     }
 
     return {
-      reset(count) {
+      // reset rewinds to the first generation of a freshly computed run.
+      // autoplay starts the replay immediately, which is what the Run buttons
+      // want; a single-frame run stays paused because there is nothing to play.
+      reset(count, autoplay) {
         frames = count;
         if (scrub) scrub.max = String(Math.max(0, frames - 1));
         setPlaying(false);
         setFrame(0);
+        if (autoplay && frames > 1) setPlaying(true);
       },
       stop() {
         setPlaying(false);

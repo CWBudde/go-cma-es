@@ -27,7 +27,7 @@ Demo.start(function (info) {
     Demo.$("readout").textContent = `best ${Number(result.bestCost[frame]).toExponential(3)} · σ ${Number(result.sigma[frame]).toExponential(3)} · cond ${Number(result.condition[frame]).toExponential(3)}`;
   }
 
-  function execute() {
+  function execute(autoplay) {
     Demo.setStatus("Computing telemetry…", "loading");
     result = Demo.call("run", {
       landscape: select.value,
@@ -41,7 +41,7 @@ Demo.start(function (info) {
     });
     if (!result) return;
     Demo.cacheSinks(sinks, result, ["population", "mean", "ellipse", "bestTrail", "bestCost", "iterationBest", "sigma", "condition"]);
-    transport.reset(result.frames);
+    transport.reset(result.frames, autoplay);
     Demo.setStatus("Ready — both charts share the generation cursor.", "ready");
   }
 
@@ -49,6 +49,6 @@ Demo.start(function (info) {
     const spec = info.landscapes.find((entry) => entry.key === select.value);
     Demo.$("sigma").value = spec.sigma;
   });
-  Demo.$("run").addEventListener("click", execute);
+  Demo.$("run").addEventListener("click", () => execute(true));
   execute();
 });
