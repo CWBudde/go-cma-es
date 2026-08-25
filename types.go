@@ -17,11 +17,27 @@ type ConstraintFunction func([]float64) float64
 type BoundaryMethod string
 
 const (
-	// BoundaryPenalty applies Hansen's boundary transformation and penalty.
+	// BoundaryPenalty evaluates the objective at Hansen's linear/quadratic
+	// transformation of the sample while adapting the distribution from the
+	// untransformed one, and adds an adaptive per-coordinate penalty to the
+	// selection ranking. The penalty weights are scaled by each coordinate's
+	// variance and grow while the distribution mean stays out of bounds; they
+	// affect ranking only, never a reported cost or position.
+	//
+	// This is the default because it is the only method that leaves the
+	// sampled step untouched. Repairing a genotype biases the covariance
+	// estimate, which is the failure mode this library exists to avoid.
 	BoundaryPenalty BoundaryMethod = "penalty"
 	// BoundaryClamp pins an out-of-range coordinate to the nearest bound.
+	// The repaired position is what the objective sees and what the mean
+	// recombines, but covariance adaptation still learns from the step that
+	// was sampled, so repeatedly pinning samples to a bound does not bias the
+	// learned metric.
 	BoundaryClamp BoundaryMethod = "clamp"
-	// BoundaryReflect mirrors an out-of-range coordinate back into the box.
+	// BoundaryReflect mirrors an out-of-range coordinate back into the box,
+	// folding repeatedly for a position more than one box width outside. It
+	// shares BoundaryClamp's split between the repaired position and the
+	// sampled step.
 	BoundaryReflect BoundaryMethod = "reflect"
 )
 

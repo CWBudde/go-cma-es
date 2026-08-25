@@ -229,9 +229,10 @@ func validateRunPosition(kind string, index int, position []float64, config *Con
 				kind, index, coordinate, value)
 		}
 
-		if value < config.LowerBound || value > config.UpperBound {
+		lower, upper := coordinateBounds(config, coordinate)
+		if value < lower || value > upper {
 			return fmt.Errorf("%s position %d coordinate %d is outside bounds [%v, %v]: %v",
-				kind, index, coordinate, config.LowerBound, config.UpperBound, value)
+				kind, index, coordinate, lower, upper, value)
 		}
 	}
 

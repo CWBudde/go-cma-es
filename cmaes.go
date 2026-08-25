@@ -37,6 +37,12 @@ type strategyState struct {
 type candidate struct {
 	x []float64
 	y []float64
+	// sampledY is the step the distribution actually drew, m + sigma*y before
+	// any boundary repair. Clamp and reflect rewrite x and with it y, so y is
+	// the repaired step the mean recombination must use, while covariance
+	// adaptation has to keep learning from the step that was sampled. Read it
+	// through adaptationStep rather than directly.
+	sampledY []float64
 	// z is the standard normal draw that produced y. It is sampling-only:
 	// boundary handling repairs x and recomputes y without touching z, so z
 	// must never be read after applyBoundaryHandling has run. It is retained
@@ -54,6 +60,7 @@ type optimizationRun struct {
 	config             *Config
 	state              *strategyState
 	tracker            *convergenceTracker
+	penalty            *boundaryPenaltyState
 	reason             TerminationReason
 	curve              []float64
 	iterationBestCurve []float64
@@ -132,6 +139,7 @@ func newOptimizationRun(config *Config, options runOptions) *optimizationRun {
 		state:  state,
 		tracker: newConvergenceTracker(config.Convergence, config.Constraints,
 			state.sigma, config.ProblemSize, config.Lambda),
+		penalty:            newBoundaryPenaltyState(config),
 		curve:              make([]float64, 0, config.MaxIterations),
 		iterationBestCurve: make([]float64, 0, config.MaxIterations),
 		sigmaHistory:       make([]float64, 0, config.MaxIterations),
@@ -194,7 +202,7 @@ func (run *optimizationRun) executeGeneration(
 		return run.handleEvaluationError(population, evaluationErr)
 	}
 
-	assignBoundaryPenalties(population, run.config.BoundaryMethod)
+	run.penalty.assign(population, run.state, run.config)
 	updateBest(&run.best, population, run.config.Constraints)
 
 	if len(population) < run.config.Mu {
@@ -415,7 +423,7 @@ func samplePopulation(state *strategyState, populationSize int, rng *rand.Rand) 
 			x[coordinate] = state.m[coordinate] + state.sigma*y[coordinate]
 		}
 
-		population[index] = candidate{x: x, y: y, z: z}
+		population[index] = candidate{x: x, y: y, sampledY: y, z: z}
 	}
 
 	return population
@@ -437,6 +445,9 @@ func applyInitialPopulation(
 	for index, position := range initialPositions {
 		copy(population[index].x, position)
 		recomputeStep(&population[index], state)
+		// A caller-supplied position replaces the draw entirely, so the step
+		// towards it is the sampled step as far as adaptation is concerned.
+		population[index].sampledY = population[index].y
 	}
 }
 
@@ -705,7 +716,7 @@ func updateCovariance(
 		symmetricRankOneUpdate(
 			covariance,
 			parameters.cmu*weight,
-			population[index].y, //nolint:gosec // The population/weight size invariant is checked by the caller.
+			population[index].adaptationStep(), //nolint:gosec // The population/weight size invariant is checked by the caller.
 		)
 	}
 }
@@ -729,7 +740,7 @@ func updateStrategyCovariance(
 		symmetricRankOneUpdate(
 			state.c,
 			parameters.cmu*weight,
-			activeUpdateVector(state, population[populationIndex].y),
+			activeUpdateVector(state, population[populationIndex].adaptationStep()),
 		)
 	}
 }

@@ -53,7 +53,7 @@ func updateSeparableCovariance(
 	negativeSteps := make([][]float64, len(parameters.negativeWeights))
 	for index := range negativeSteps {
 		populationIndex := len(parameters.weights) + index
-		negativeSteps[index] = activeUpdateVector(state, population[populationIndex].y)
+		negativeSteps[index] = activeUpdateVector(state, population[populationIndex].adaptationStep())
 	}
 
 	for coordinate := range state.diagonal {
@@ -61,7 +61,7 @@ func updateSeparableCovariance(
 			parameters.c1*state.pc[coordinate]*state.pc[coordinate]
 
 		for index, weight := range parameters.weights {
-			step := population[index].y[coordinate]
+			step := population[index].adaptationStep()[coordinate]
 			value += parameters.cmu * weight * step * step
 		}
 

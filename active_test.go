@@ -183,3 +183,99 @@ func TestActiveCMAIsNoWorseThanPassive(t *testing.T) {
 		})
 	}
 }
+
+// adaptationStepFixture builds one generation whose sampled steps are the given
+// vectors and whose repaired steps are those vectors folded back towards the
+// mean, which is what a clamp or a reflection does to a candidate that fell out
+// of the box. Covariance adaptation must not see the folded steps.
+func adaptationStepFixture(sampled [][]float64) []candidate {
+	population := make([]candidate, len(sampled))
+
+	for index, step := range sampled {
+		repaired := make([]float64, len(step))
+		for coordinate, value := range step {
+			repaired[coordinate] = -0.1 * value
+		}
+
+		population[index] = candidate{y: repaired, sampledY: step}
+	}
+
+	return population
+}
+
+// sampledSteps returns steps that are pairwise distinct in direction as well as
+// in length, so that a covariance built from the wrong ones cannot coincide
+// with a covariance built from the right ones.
+func sampledSteps(count, dimension int) [][]float64 {
+	steps := make([][]float64, count)
+
+	for index := range steps {
+		step := make([]float64, dimension)
+		for coordinate := range step {
+			step[coordinate] = math.Sin(float64(index+1) * float64(coordinate+2))
+		}
+
+		steps[index] = step
+	}
+
+	return steps
+}
+
+// TestCovarianceUpdateLearnsFromTheSampledStep is the unit-level guard for the
+// genotype/phenotype split. Repairing a candidate must leave the covariance
+// update exactly where it would have been without the repair: the positive
+// rank-mu terms keep the full sampled length, and the negative active terms
+// keep subtracting along the direction that was actually explored rather than
+// along the folded one.
+func TestCovarianceUpdateLearnsFromTheSampledStep(t *testing.T) {
+	config := NewDefaultConfig(5)
+	parameters := deriveStrategyParameters(config)
+
+	if len(parameters.negativeWeights) == 0 {
+		t.Fatal("default configuration has no negative weights to guard")
+	}
+
+	steps := sampledSteps(config.Lambda, config.ProblemSize)
+
+	unrepaired := make([]candidate, config.Lambda)
+	for index, step := range steps {
+		unrepaired[index] = candidate{y: append([]float64(nil), step...), sampledY: step}
+	}
+
+	want := newStrategyState(config)
+	updateStrategyCovariance(want, unrepaired, true, parameters)
+
+	got := newStrategyState(config)
+	updateStrategyCovariance(got, adaptationStepFixture(steps), true, parameters)
+
+	assertMatrixClose(t, got.c, want.c, 0)
+
+	// The comparison is only meaningful if the folded steps would have produced
+	// a different covariance.
+	folded := newStrategyState(config)
+
+	for index := range unrepaired {
+		for coordinate := range unrepaired[index].y {
+			unrepaired[index].y[coordinate] *= -0.1
+			unrepaired[index].sampledY = unrepaired[index].y
+		}
+	}
+
+	updateStrategyCovariance(folded, unrepaired, true, parameters)
+
+	if matricesEqual(folded.c, want.c) {
+		t.Fatal("folded steps produce the same covariance; the test cannot fail")
+	}
+}
+
+func matricesEqual(left, right [][]float64) bool {
+	for row := range left {
+		for column := range left[row] {
+			if left[row][column] != right[row][column] {
+				return false
+			}
+		}
+	}
+
+	return true
+}
