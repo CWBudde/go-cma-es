@@ -16,6 +16,9 @@ type Progress struct {
 
 // ProgressObserver receives progress synchronously on the optimization
 // goroutine after each completed iteration.
+//
+// A panic raised by the observer is recovered and reported through the
+// registered Logger; it never aborts the run.
 type ProgressObserver func(Progress)
 
 // PopulationCandidate is one evaluated member of a population snapshot.
@@ -36,11 +39,21 @@ type PopulationSnapshot struct {
 
 // PopulationObserver receives an opt-in deep copy of each evaluated
 // population. No population copying occurs when it is nil.
+//
+// A panic raised by the observer is recovered and reported through the
+// registered Logger; it never aborts the run.
 type PopulationObserver func(PopulationSnapshot)
 
 // DistributionSnapshot describes the sampling distribution after a completed
 // iteration. Eigenvalues contains D, the square roots of C's eigenvalues, and
 // Eigenvectors contains B with eigenvectors in its columns.
+//
+// All five distribution fields describe the same iteration: B and D are
+// decomposed from the covariance that Mean and Sigma were updated with, not
+// from the strategy's lazily refreshed eigensystem, so the ellipse
+// m + sigma*B*D*S(1) is the one this iteration actually ended with.
+// Registering a DistributionObserver is what pays for that decomposition, one
+// per completed iteration.
 type DistributionSnapshot struct {
 	Mean            []float64
 	Eigenvalues     []float64
@@ -52,10 +65,19 @@ type DistributionSnapshot struct {
 }
 
 // DistributionObserver receives an opt-in deep copy of each distribution.
+// Registering one costs an extra eigendecomposition per iteration; see
+// DistributionSnapshot.
+//
+// A panic raised by the observer is recovered and reported through the
+// registered Logger; it never aborts the run.
 type DistributionObserver func(DistributionSnapshot)
 
 // Logger receives structured optimization lifecycle events. *slog.Logger
-// implements Logger.
+// implements Logger. Iteration events are emitted at slog.LevelDebug, run
+// start and termination at slog.LevelInfo, and a failed run at
+// slog.LevelError.
+//
+// A panic raised by Log is recovered and discarded; it never aborts the run.
 type Logger interface {
 	Log(ctx context.Context, level slog.Level, message string, args ...any)
 }
@@ -240,6 +262,7 @@ func cloneBest(best Best) Best {
 }
 
 func notifyLifecycle(
+	ctx context.Context,
 	options runOptions,
 	iteration, evaluations int,
 	best Best,
@@ -247,36 +270,70 @@ func notifyLifecycle(
 	state *strategyState,
 ) {
 	if options.observer != nil {
-		options.observer(Progress{
+		progress := Progress{
 			Best:            cloneBest(best),
 			Iteration:       iteration,
 			EvaluationCount: evaluations,
+		}
+		notifyContained(ctx, options.logger, "progress_observer", func() {
+			options.observer(progress)
 		})
 	}
 
 	if options.populationObserver != nil {
-		candidates := make([]PopulationCandidate, len(population))
-		for index, current := range population {
-			candidates[index] = PopulationCandidate{
-				Position:            append([]float64(nil), current.evaluatedPosition()...),
-				Cost:                current.cost,
-				ConstraintViolation: current.constraintViolation,
-			}
-		}
-
-		options.populationObserver(PopulationSnapshot{
-			Population:      candidates,
-			Best:            cloneBest(best),
-			Iteration:       iteration,
-			EvaluationCount: evaluations,
+		snapshot := populationSnapshot(best, population, iteration, evaluations)
+		notifyContained(ctx, options.logger, "population_observer", func() {
+			options.populationObserver(snapshot)
 		})
 	}
 
 	if options.distributionObserver != nil {
-		options.distributionObserver(distributionSnapshot(state, iteration, evaluations))
+		snapshot := distributionSnapshot(state, iteration, evaluations)
+		notifyContained(ctx, options.logger, "distribution_observer", func() {
+			options.distributionObserver(snapshot)
+		})
 	}
 }
 
+// notifyContained invokes one caller-supplied observer and contains a panic it
+// raises. Reporting is a side channel: a faulty observer must not destroy an
+// in-progress run and the best solution found so far with it.
+func notifyContained(ctx context.Context, logger Logger, source string, notify func()) {
+	defer func() {
+		recovered := recover()
+		if recovered != nil {
+			logObserverPanic(ctx, logger, source, recovered)
+		}
+	}()
+
+	notify()
+}
+
+func populationSnapshot(
+	best Best,
+	population []candidate,
+	iteration, evaluations int,
+) PopulationSnapshot {
+	candidates := make([]PopulationCandidate, len(population))
+	for index, current := range population {
+		candidates[index] = PopulationCandidate{
+			Position:            append([]float64(nil), current.evaluatedPosition()...),
+			Cost:                current.cost,
+			ConstraintViolation: current.constraintViolation,
+		}
+	}
+
+	return PopulationSnapshot{
+		Population:      candidates,
+		Best:            cloneBest(best),
+		Iteration:       iteration,
+		EvaluationCount: evaluations,
+	}
+}
+
+// distributionSnapshot reports the distribution described by state. The caller
+// supplies the state whose B and D belong to the reported iteration; see
+// optimizationRun.reportedState.
 func distributionSnapshot(
 	state *strategyState,
 	iteration, evaluations int,

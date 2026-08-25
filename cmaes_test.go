@@ -3,9 +3,11 @@ package cmaes
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"math/rand"
 	"reflect"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -310,9 +312,13 @@ func TestGeneratedRandomSourceIsRecorded(t *testing.T) {
 		t.Fatalf("Optimize: %v", err)
 	}
 
-	if config.Rand == nil || !result.SeedKnown || result.Seed != seed {
-		t.Errorf("random metadata = (Rand %p, Seed %d, known %v), want non-nil, %d, true",
-			config.Rand, result.Seed, result.SeedKnown, seed)
+	if config.Rand != nil {
+		t.Errorf("Optimize wrote a generator back into Config.Rand: %p", config.Rand)
+	}
+
+	if !result.SeedKnown || result.Seed != seed {
+		t.Errorf("random metadata = (Seed %d, known %v), want (%d, true)",
+			result.Seed, result.SeedKnown, seed)
 	}
 
 	direct := optimizationConfig(2, 0, sphere)
@@ -328,6 +334,214 @@ func TestGeneratedRandomSourceIsRecorded(t *testing.T) {
 	if directResult.SeedKnown || directResult.Seed != 0 {
 		t.Errorf("direct Rand metadata = (%d, %v), want (0, false)",
 			directResult.Seed, directResult.SeedKnown)
+	}
+}
+
+func TestConfigIsReusableAcrossRuns(t *testing.T) {
+	config := optimizationConfig(4, 101, sphere)
+	config.MaxIterations = 30
+
+	first, err := Optimize(config)
+	if err != nil {
+		t.Fatalf("first Optimize: %v", err)
+	}
+
+	second, err := Optimize(config)
+	if err != nil {
+		t.Fatalf("second Optimize on the same Config: %v", err)
+	}
+
+	if !reflect.DeepEqual(first, second) {
+		t.Errorf("repeated runs of one seeded Config differ:\nfirst  = %#v\nsecond = %#v",
+			first, second)
+	}
+}
+
+// cancellingObjective cancels the run once the objective has been called the
+// given number of times, and records every cost it produced.
+type cancellingObjective struct {
+	cancel  context.CancelFunc
+	mutex   sync.Mutex
+	costs   []float64
+	trigger int
+}
+
+func (objective *cancellingObjective) evaluate(position []float64) float64 {
+	cost := sphere(position)
+
+	objective.mutex.Lock()
+	objective.costs = append(objective.costs, cost)
+	reached := len(objective.costs) >= objective.trigger
+	objective.mutex.Unlock()
+
+	if reached {
+		objective.cancel()
+	}
+
+	return cost
+}
+
+func (objective *cancellingObjective) observed() (int, float64) {
+	objective.mutex.Lock()
+	defer objective.mutex.Unlock()
+
+	best := math.Inf(1)
+	for _, cost := range objective.costs {
+		best = math.Min(best, cost)
+	}
+
+	return len(objective.costs), best
+}
+
+func TestPartialGenerationCancellationReturnsBestSoFar(t *testing.T) {
+	for _, parallel := range []bool{false, true} {
+		t.Run(fmt.Sprintf("parallel=%v", parallel), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			objective := &cancellingObjective{cancel: cancel, trigger: 2}
+			config := optimizationConfig(4, 102, objective.evaluate)
+			config.MaxIterations = 50
+			config.EnableParallel = parallel
+			config.MaxWorkers = 2
+
+			result, err := OptimizeContext(ctx, config)
+			if err != nil {
+				t.Fatalf("OptimizeContext: %v", err)
+			}
+
+			calls, bestCost := objective.observed()
+
+			if result.TerminationReason != TerminationCancelled {
+				t.Errorf("termination = %q, want %q",
+					result.TerminationReason, TerminationCancelled)
+			}
+
+			if result.IterationCount != 0 || len(result.ConvergenceCurve) != 0 {
+				t.Errorf("iterations = %d, curve length = %d, want an abandoned first generation",
+					result.IterationCount, len(result.ConvergenceCurve))
+			}
+
+			if result.FuncEvalCount != calls {
+				t.Errorf("FuncEvalCount = %d, objective calls = %d", result.FuncEvalCount, calls)
+			}
+
+			if calls >= config.Lambda {
+				t.Fatalf("objective calls = %d, want a partial generation below lambda %d",
+					calls, config.Lambda)
+			}
+
+			if result.GlobalBest.Cost != bestCost ||
+				len(result.GlobalBest.Position) != config.ProblemSize {
+				t.Errorf("best = (cost %v, position %v), want cost %v of the evaluated candidates",
+					result.GlobalBest.Cost, result.GlobalBest.Position, bestCost)
+			}
+		})
+	}
+}
+
+func TestCancellationAfterAFullGenerationCompletesItIdentically(t *testing.T) {
+	run := func(parallel bool) *Result {
+		t.Helper()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		config := optimizationConfig(4, 103, nil)
+		config.MaxIterations = 50
+		config.EnableParallel = parallel
+		config.MaxWorkers = 2
+
+		objective := &cancellingObjective{cancel: cancel, trigger: config.Lambda}
+		config.ObjectiveFunc = objective.evaluate
+
+		result, err := OptimizeContext(ctx, config)
+		if err != nil {
+			t.Fatalf("OptimizeContext(parallel=%v): %v", parallel, err)
+		}
+
+		calls, _ := objective.observed()
+		if calls != config.Lambda {
+			t.Fatalf("objective calls = %d, want exactly one full generation of %d",
+				calls, config.Lambda)
+		}
+
+		return result
+	}
+
+	serial := run(false)
+	parallel := run(true)
+
+	if serial.TerminationReason != TerminationCancelled || serial.IterationCount != 1 ||
+		len(serial.ConvergenceCurve) != 1 {
+		t.Errorf("serial result = %+v, want one completed iteration then cancellation", serial)
+	}
+
+	if !reflect.DeepEqual(serial, parallel) {
+		t.Errorf("cancellation after a fully evaluated generation differs by evaluation mode:"+
+			"\nserial   = %#v\nparallel = %#v", serial, parallel)
+	}
+}
+
+func TestNonContextEvaluationErrorAbortsTheRun(t *testing.T) {
+	config := optimizationConfig(2, 104, sphere)
+	run := newOptimizationRun(config, runOptions{})
+	failure := errors.New("objective backend unavailable")
+
+	stop, err := run.handleEvaluationError(nil, failure)
+	if stop || !errors.Is(err, failure) {
+		t.Errorf("handleEvaluationError = (%v, %v), want (false, %v)", stop, err, failure)
+	}
+
+	if run.reason == TerminationCancelled {
+		t.Error("a non-context failure was reported as a cancellation")
+	}
+}
+
+func TestGenerationBestCurveRecordsOscillation(t *testing.T) {
+	rastrigin := func(position []float64) float64 {
+		cost := 10 * float64(len(position))
+		for _, value := range position {
+			cost += value*value - 10*math.Cos(2*math.Pi*value)
+		}
+
+		return cost
+	}
+
+	config := optimizationConfig(5, 105, rastrigin)
+	config.Convergence = nil
+	config.MaxIterations = 60
+
+	run := newOptimizationRun(config, runOptions{})
+
+	err := run.execute(context.Background(), rand.New(rand.NewSource(105)))
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	if len(run.generationCurve) != run.iterations || len(run.curve) != run.iterations {
+		t.Fatalf("curve lengths = (%d generation, %d global), want %d",
+			len(run.generationCurve), len(run.curve), run.iterations)
+	}
+
+	runningBest := math.Inf(1)
+	oscillated := false
+
+	for index, generationBest := range run.generationCurve {
+		runningBest = math.Min(runningBest, generationBest)
+
+		if run.curve[index] != runningBest {
+			t.Fatalf("global curve[%d] = %v, want the running best %v of the generation curve",
+				index, run.curve[index], runningBest)
+		}
+
+		if index > 0 && generationBest > run.generationCurve[index-1] {
+			oscillated = true
+		}
+	}
+
+	if !oscillated {
+		t.Error("generation curve never rises, so it cannot show fitness oscillation")
 	}
 }
 

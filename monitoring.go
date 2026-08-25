@@ -2,6 +2,7 @@ package cmaes
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 )
 
@@ -9,15 +10,33 @@ const (
 	eventOptimizationStarted   = "optimization_started"
 	eventIterationCompleted    = "iteration_completed"
 	eventOptimizationCompleted = "optimization_completed"
+	eventOptimizationFailed    = "optimization_failed"
+	eventObserverPanic         = "observer_panic"
 )
 
-func logOptimizationStarted(ctx context.Context, logger Logger, config *Config) {
+// logSafely forwards one lifecycle event to a caller-supplied logger. A panic
+// raised by Log is contained, for the same reason observer panics are: a
+// faulty reporting sink must not destroy an in-progress run.
+func logSafely(
+	ctx context.Context,
+	logger Logger,
+	level slog.Level,
+	message string,
+	args ...any,
+) {
 	if logger == nil {
 		return
 	}
 
-	logger.Log(
+	defer func() { _ = recover() }()
+
+	logger.Log(ctx, level, message, args...)
+}
+
+func logOptimizationStarted(ctx context.Context, logger Logger, config *Config) {
+	logSafely(
 		ctx,
+		logger,
 		slog.LevelInfo,
 		"optimization started",
 		"event", eventOptimizationStarted,
@@ -36,13 +55,12 @@ func logIterationCompleted(
 	best Best,
 	sigma, condition float64,
 ) {
-	if logger == nil {
-		return
-	}
-
-	logger.Log(
+	// Debug level: one iteration event per generation would otherwise flood an
+	// info-level sink with a line for every one of MaxIterations generations.
+	logSafely(
 		ctx,
-		slog.LevelInfo,
+		logger,
+		slog.LevelDebug,
 		"optimization iteration completed",
 		"event", eventIterationCompleted,
 		"iteration", iteration,
@@ -55,12 +73,9 @@ func logIterationCompleted(
 }
 
 func logOptimizationCompleted(ctx context.Context, logger Logger, result *Result) {
-	if logger == nil {
-		return
-	}
-
-	logger.Log(
+	logSafely(
 		ctx,
+		logger,
 		slog.LevelInfo,
 		"optimization completed",
 		"event", eventOptimizationCompleted,
@@ -69,5 +84,30 @@ func logOptimizationCompleted(ctx context.Context, logger Logger, result *Result
 		"best_cost", result.GlobalBest.Cost,
 		"constraint_violation", result.GlobalBest.ConstraintViolation,
 		"termination_reason", result.TerminationReason,
+	)
+}
+
+// logOptimizationFailed reports the terminal event of a run that ended with an
+// error, so that every logged start is followed by exactly one logged end.
+func logOptimizationFailed(ctx context.Context, logger Logger, runErr error) {
+	logSafely(
+		ctx,
+		logger,
+		slog.LevelError,
+		"optimization failed",
+		"event", eventOptimizationFailed,
+		"error", runErr.Error(),
+	)
+}
+
+func logObserverPanic(ctx context.Context, logger Logger, source string, recovered any) {
+	logSafely(
+		ctx,
+		logger,
+		slog.LevelError,
+		"optimization observer panicked",
+		"event", eventObserverPanic,
+		"source", source,
+		"panic", fmt.Sprint(recovered),
 	)
 }

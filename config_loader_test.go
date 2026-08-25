@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -17,6 +18,8 @@ func loaderTestConfig() *Config {
 	target := -0.5
 	config.Seed = &seed
 	config.InitialMean = []float64{1, 2, 3, 4, 5}
+	config.LowerBounds = []float64{-5, -4, -3, -2, -1}
+	config.UpperBounds = []float64{5, 5, 5, 5, 5}
 	config.InitialSigma = 0.75
 	config.Lambda = 12
 	config.Mu = 6
@@ -97,9 +100,111 @@ func TestSaveAndLoadConfigRoundTrip(t *testing.T) {
 
 	loaded.ObjectiveFunc = original.ObjectiveFunc
 
+	// Dropped constraint callbacks must fail as loudly as a dropped objective,
+	// because a run that silently ignores its constraints is the dangerous one.
+	err = loaded.Validate()
+	if err == nil || !strings.Contains(err.Error(), "no constraint functions") {
+		t.Fatalf("loaded.Validate() after restoring objective = %v, want missing constraints error", err)
+	}
+
+	loaded.Constraints.Inequalities = original.Constraints.Inequalities
+	loaded.Constraints.Equalities = original.Constraints.Equalities
+
 	err = loaded.Validate()
 	if err != nil {
-		t.Fatalf("loaded.Validate() after restoring objective = %v", err)
+		t.Fatalf("loaded.Validate() after restoring the callbacks = %v", err)
+	}
+}
+
+func TestLoadConfigAcceptsAFileWithoutAFormatVersion(t *testing.T) {
+	original := loaderTestConfig()
+	path := filepath.Join(t.TempDir(), "config.json")
+
+	err := SaveConfig(original, path)
+	if err != nil {
+		t.Fatalf("SaveConfig() = %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() = %v", err)
+	}
+
+	raw := map[string]json.RawMessage{}
+
+	err = json.Unmarshal(data, &raw)
+	if err != nil {
+		t.Fatalf("saved file is not a JSON object: %v", err)
+	}
+
+	if string(raw["format_version"]) != strconv.Itoa(configFileVersion) {
+		t.Fatalf("format_version = %s, want %d", raw["format_version"], configFileVersion)
+	}
+
+	// A file predating the guard has no version key and must still load.
+	delete(raw, "format_version")
+
+	legacy, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatalf("json.Marshal(raw) = %v", err)
+	}
+
+	legacyPath := filepath.Join(t.TempDir(), "legacy.json")
+
+	err = os.WriteFile(legacyPath, legacy, 0o600)
+	if err != nil {
+		t.Fatalf("WriteFile() = %v", err)
+	}
+
+	loaded, err := LoadConfig(legacyPath)
+	if err != nil {
+		t.Fatalf("LoadConfig(legacy) = %v, want nil", err)
+	}
+
+	if loaded.ProblemSize != original.ProblemSize || loaded.Lambda != original.Lambda {
+		t.Errorf("legacy config = (problem_size %d, lambda %d), want (%d, %d)",
+			loaded.ProblemSize, loaded.Lambda, original.ProblemSize, original.Lambda)
+	}
+}
+
+func TestLoadConfigRejectsAFutureFormatVersion(t *testing.T) {
+	original := loaderTestConfig()
+	path := filepath.Join(t.TempDir(), "config.json")
+
+	err := SaveConfig(original, path)
+	if err != nil {
+		t.Fatalf("SaveConfig() = %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() = %v", err)
+	}
+
+	raw := map[string]json.RawMessage{}
+
+	err = json.Unmarshal(data, &raw)
+	if err != nil {
+		t.Fatalf("saved file is not a JSON object: %v", err)
+	}
+
+	raw["format_version"] = json.RawMessage(strconv.Itoa(configFileVersion + 1))
+
+	future, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatalf("json.Marshal(raw) = %v", err)
+	}
+
+	futurePath := filepath.Join(t.TempDir(), "future.json")
+
+	err = os.WriteFile(futurePath, future, 0o600)
+	if err != nil {
+		t.Fatalf("WriteFile() = %v", err)
+	}
+
+	_, err = LoadConfig(futurePath)
+	if err == nil || !strings.Contains(err.Error(), "unsupported config format_version") {
+		t.Fatalf("LoadConfig(future) = %v, want an unsupported version error", err)
 	}
 }
 
@@ -126,7 +231,10 @@ func TestSaveConfigUsesSnakeCaseAndOmitsFunctions(t *testing.T) {
 		t.Fatalf("saved file is not a JSON object: %v", err)
 	}
 
-	for _, key := range []string{"initial_mean", "initial_sigma", "problem_size", "active_cma"} {
+	for _, key := range []string{
+		"initial_mean", "initial_sigma", "problem_size", "active_cma",
+		"lower_bounds", "upper_bounds", "format_version",
+	} {
 		if _, found := raw[key]; !found {
 			t.Errorf("saved config is missing key %q", key)
 		}
@@ -225,5 +333,28 @@ func TestValidateWithoutObjectiveRejectsNil(t *testing.T) {
 func TestPlaceholderObjective(t *testing.T) {
 	if got := placeholderObjective([]float64{1, 2}); got != 0 {
 		t.Errorf("placeholderObjective() = %v, want 0", got)
+	}
+}
+
+func TestPlaceholderConstraint(t *testing.T) {
+	// Zero is a satisfied inequality, so the stand-in never changes a ranking
+	// even if it were to escape validateWithoutObjective's probe copy.
+	if got := placeholderConstraint([]float64{1, 2}); got != 0 {
+		t.Errorf("placeholderConstraint() = %v, want 0", got)
+	}
+}
+
+func TestValidateWithoutObjectiveDoesNotMutateConstraints(t *testing.T) {
+	config := loaderTestConfig()
+	config.Constraints.Inequalities = nil
+	config.Constraints.Equalities = nil
+
+	err := validateWithoutObjective(config)
+	if err != nil {
+		t.Fatalf("validateWithoutObjective() = %v, want nil", err)
+	}
+
+	if config.Constraints.Inequalities != nil {
+		t.Errorf("probe leaked a placeholder into the config: %v", config.Constraints.Inequalities)
 	}
 }

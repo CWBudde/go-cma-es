@@ -8,9 +8,11 @@ import (
 )
 
 const (
-	defaultInitialSigma       = 0.3
-	defaultMaxIterations      = 1000
-	defaultTolX               = 1e-11
+	defaultInitialSigma  = 0.3
+	defaultMaxIterations = 1000
+	// defaultTolX is Hansen's TolX, which is relative to the initial step size:
+	// the run stops below 1e-12 * sigma^(0).
+	defaultTolX               = 1e-12
 	defaultTolFun             = 1e-12
 	defaultTolXUp             = 1e4
 	defaultConditionCov       = 1e14
@@ -109,6 +111,15 @@ func defaultPopulationSize(problemSize int) int {
 func deriveStrategyParameters(config *Config) strategyParameters {
 	weights := make([]float64, config.Mu)
 	weightSum := 0.0
+
+	// weightBase is the offset of the log-decreasing recombination weights
+	// w'_i = weightBase - ln(i). It is a hybrid of two published forms:
+	// Hansen's tutorial (arXiv:1604.00772, eq. 49) uses ln((lambda+1)/2), while
+	// purecmaes.m uses ln(mu + 1/2). They agree at the default mu = lambda/2.
+	// Taking the larger of mu and lambda/2 keeps the tutorial form for the
+	// default and switches to the purecmaes form once the caller raises Mu
+	// above lambda/2, where the tutorial form would make the trailing weights
+	// negative before normalisation and flip the sign of the whole vector.
 	weightBase := math.Log(math.Max(float64(config.Mu), float64(config.Lambda)/2) + 0.5)
 
 	for i := range weights {
@@ -192,6 +203,13 @@ func (config *Config) Validate() error {
 		return fmt.Errorf("max_evaluations must be non-negative (got %d)", config.MaxEvaluations)
 	}
 
+	// Zero means "no cap"; any positive budget must cover one whole generation,
+	// because a run that cannot finish its first generation returns nothing.
+	if config.MaxEvaluations > 0 && config.MaxEvaluations < config.Lambda {
+		return fmt.Errorf("max_evaluations (%d) must be zero or at least lambda (%d)",
+			config.MaxEvaluations, config.Lambda)
+	}
+
 	if config.MaxWorkers < 0 {
 		return fmt.Errorf("max_workers must be non-negative (got %d)", config.MaxWorkers)
 	}
@@ -218,20 +236,85 @@ func (config *Config) Validate() error {
 	return nil
 }
 
+// coordinateBounds returns the search interval for one coordinate,
+// broadcasting the scalar bounds when no per-dimension slice is set.
+//
+// The two sides are resolved independently: LowerBounds[coordinate] wins over
+// LowerBound whenever LowerBounds covers that coordinate, and likewise for the
+// upper side. An index outside a configured slice falls back to the scalar, so
+// the helper is safe to call before Validate has checked the slice lengths.
+func coordinateBounds(config *Config, coordinate int) (lower, upper float64) {
+	lower = config.LowerBound
+	if coordinate >= 0 && coordinate < len(config.LowerBounds) {
+		lower = config.LowerBounds[coordinate]
+	}
+
+	upper = config.UpperBound
+	if coordinate >= 0 && coordinate < len(config.UpperBounds) {
+		upper = config.UpperBounds[coordinate]
+	}
+
+	return lower, upper
+}
+
+// coordinateBoxWidth returns the width of one coordinate's search interval,
+// upper - lower, using the same broadcasting rule as coordinateBounds. Validate
+// guarantees the width is positive and finite for a valid configuration.
+func coordinateBoxWidth(config *Config, coordinate int) float64 {
+	lower, upper := coordinateBounds(config, coordinate)
+
+	return upper - lower
+}
+
 func validateBounds(config *Config) error {
-	if !isFinite(config.LowerBound) || !isFinite(config.UpperBound) {
+	err := validateBoundSlice("lower_bounds", config.LowerBounds, config.ProblemSize)
+	if err != nil {
+		return err
+	}
+
+	err = validateBoundSlice("upper_bounds", config.UpperBounds, config.ProblemSize)
+	if err != nil {
+		return err
+	}
+
+	if (config.LowerBounds == nil && !isFinite(config.LowerBound)) ||
+		(config.UpperBounds == nil && !isFinite(config.UpperBound)) {
 		return fmt.Errorf("lower_bound and upper_bound must be finite (got %v, %v)",
 			config.LowerBound, config.UpperBound)
 	}
 
-	if config.LowerBound >= config.UpperBound {
-		return fmt.Errorf("lower_bound (%v) must be less than upper_bound (%v)",
-			config.LowerBound, config.UpperBound)
+	for coordinate := range config.ProblemSize {
+		lower, upper := coordinateBounds(config, coordinate)
+
+		if lower >= upper {
+			return fmt.Errorf("lower_bound[%d] (%v) must be less than upper_bound[%d] (%v)",
+				coordinate, lower, coordinate, upper)
+		}
+
+		if !isFinite(upper - lower) {
+			return fmt.Errorf("upper_bound - lower_bound must be finite for coordinate %d (got %v - %v)",
+				coordinate, upper, lower)
+		}
 	}
 
-	if !isFinite(config.UpperBound - config.LowerBound) {
-		return fmt.Errorf("upper_bound - lower_bound must be finite (got %v - %v)",
-			config.UpperBound, config.LowerBound)
+	return nil
+}
+
+// validateBoundSlice checks an optional per-dimension bound vector. A nil slice
+// is the documented "broadcast the scalar" case and is always accepted.
+func validateBoundSlice(name string, bounds []float64, problemSize int) error {
+	if bounds == nil {
+		return nil
+	}
+
+	if len(bounds) != problemSize {
+		return fmt.Errorf("%s has length %d, want problem_size %d", name, len(bounds), problemSize)
+	}
+
+	for index, value := range bounds {
+		if !isFinite(value) {
+			return fmt.Errorf("%s[%d] must be finite (got %v)", name, index, value)
+		}
 	}
 
 	return nil
@@ -250,6 +333,14 @@ func validateInitialDistribution(config *Config) error {
 	for index, value := range config.InitialMean {
 		if !isFinite(value) {
 			return fmt.Errorf("initial_mean[%d] must be finite (got %v)", index, value)
+		}
+
+		// The mean is copied into the distribution state unprojected, so an
+		// out-of-box mean would start the run outside the feasible region.
+		lower, upper := coordinateBounds(config, index)
+		if value < lower || value > upper {
+			return fmt.Errorf("initial_mean[%d] (%v) must lie within [%v, %v]",
+				index, value, lower, upper)
 		}
 	}
 
@@ -359,7 +450,26 @@ func validateConstraintConfig(config *ConstraintConfig) error {
 		return errors.New("penalty_factor must be positive with penalty handling")
 	}
 
+	// The constraint callbacks are not serializable, so a configuration that
+	// survives a save/load cycle keeps its handling settings but loses every
+	// function. Rejecting a configured-but-empty ConstraintConfig turns that
+	// silent loss into the same loud failure a missing ObjectiveFunc produces.
+	// A wholly zero ConstraintConfig carries no intent and stays legal.
+	if len(config.Inequalities) == 0 && len(config.Equalities) == 0 && !isZeroConstraintConfig(config) {
+		return errors.New("constraint handling is configured but no constraint functions are set; " +
+			"they are not restored by LoadConfig and must be reattached")
+	}
+
 	return nil
+}
+
+// isZeroConstraintConfig reports whether config carries no configured intent,
+// which is the one case where an empty constraint set is meaningful.
+func isZeroConstraintConfig(config *ConstraintConfig) bool {
+	return config.Handling == "" &&
+		config.PenaltyMethod == "" &&
+		config.PenaltyFactor == 0 &&
+		config.EqualityTolerance == 0
 }
 
 func isFinite(value float64) bool {

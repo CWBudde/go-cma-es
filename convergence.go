@@ -12,11 +12,14 @@ type generationScoreRange struct {
 type convergenceTracker struct {
 	config             *ConvergenceConfig
 	constraints        *ConstraintConfig
-	recentScores       []generationScoreRange
+	recentBest         []float64
 	referenceBest      CandidateEvaluation
+	currentScores      generationScoreRange
 	initialSigma       float64
+	initialAxisScale   float64
 	stagnantIterations int
 	historyLimit       int
+	hasCurrentScores   bool
 }
 
 func newConvergenceTracker(
@@ -49,6 +52,7 @@ func (tracker *convergenceTracker) observe(
 		return "", false
 	}
 
+	tracker.captureInitialAxisScale(state)
 	tracker.observeImprovement(best)
 	tracker.observeScores(population)
 
@@ -60,7 +64,7 @@ func (tracker *convergenceTracker) observe(
 		return TerminationTargetCost, true
 	}
 
-	if tolXReached(state, tracker.config.TolX) {
+	if tolXReached(state, tracker.initialSigma, tracker.config.TolX) {
 		return TerminationTolX, true
 	}
 
@@ -68,7 +72,8 @@ func (tracker *convergenceTracker) observe(
 		return TerminationTolFun, true
 	}
 
-	if tolXUpReached(state, tracker.initialSigma, tracker.config.TolXUp) {
+	if tolXUpReached(state, tracker.initialSigma, tracker.initialAxisScale,
+		tracker.config.TolXUp) {
 		return TerminationTolXUp, true
 	}
 
@@ -91,6 +96,24 @@ func (tracker *convergenceTracker) observe(
 	}
 
 	return "", false
+}
+
+// captureInitialAxisScale records max(D) once, from the first state the
+// tracker sees. TolXUp is published as "sigma * max(D) grew by more than
+// TolXUp over its initial value" (Hansen, tutorial App. B); comparing against
+// sigma0 alone is only the same statement when D starts at the identity. The
+// tracker is built before any state exists, so the reference is taken at the
+// first observation -- one distribution update in -- which keeps the criterion
+// meaningful for a warm start or a variant seeding a non-identity C.
+func (tracker *convergenceTracker) captureInitialAxisScale(state *strategyState) {
+	if tracker.initialAxisScale > 0 || state == nil {
+		return
+	}
+
+	scale := maxAxisScale(state.d)
+	if scale > 0 && isFinite(scale) {
+		tracker.initialAxisScale = scale
+	}
 }
 
 func (tracker *convergenceTracker) observeImprovement(best Best) {
@@ -152,29 +175,46 @@ func (tracker *convergenceTracker) targetReached(best Best) bool {
 		best.Cost <= *tracker.config.TargetCost
 }
 
+// observeScores feeds Hansen's TolFun window. The criterion (tutorial App. B,
+// cma.py "tolfun") ranges over the best value of each of the last
+// historyLimit generations, unioned with every value of the *current*
+// generation -- so the window keeps a best-of-generation series, not each
+// generation's full spread.
+//
+// A non-finite score is skipped rather than allowed to reset the window: one
+// NaN evaluation late in a run must not cost the whole accumulated history. A
+// generation in which no candidate scored finitely is skipped whole, leaving
+// both the series and the previous generation's spread untouched.
 func (tracker *convergenceTracker) observeScores(population []candidate) {
 	if tracker.config.TolFun <= 0 || len(population) == 0 {
 		return
 	}
 
 	current := generationScoreRange{minimum: math.Inf(1), maximum: math.Inf(-1)}
+	finite := false
 
 	for _, candidate := range population {
 		score := convergenceScore(candidate, tracker.constraints)
 		if !isFinite(score) {
-			tracker.recentScores = nil
-
-			return
+			continue
 		}
 
+		finite = true
 		current.minimum = min(current.minimum, score)
 		current.maximum = max(current.maximum, score)
 	}
 
-	tracker.recentScores = append(tracker.recentScores, current)
-	if len(tracker.recentScores) > tracker.historyLimit {
-		copy(tracker.recentScores, tracker.recentScores[len(tracker.recentScores)-tracker.historyLimit:])
-		tracker.recentScores = tracker.recentScores[:tracker.historyLimit]
+	if !finite {
+		return
+	}
+
+	tracker.currentScores = current
+	tracker.hasCurrentScores = true
+
+	tracker.recentBest = append(tracker.recentBest, current.minimum)
+	if len(tracker.recentBest) > tracker.historyLimit {
+		copy(tracker.recentBest, tracker.recentBest[len(tracker.recentBest)-tracker.historyLimit:])
+		tracker.recentBest = tracker.recentBest[:tracker.historyLimit]
 	}
 }
 
@@ -200,23 +240,31 @@ func convergenceScore(current candidate, constraints *ConstraintConfig) float64 
 	return current.constraintViolation
 }
 
+// tolFunReached reports whether the range of the best-of-generation series
+// over the last historyLimit generations, unioned with the current
+// generation's full spread, has fallen to TolFun or below.
 func (tracker *convergenceTracker) tolFunReached() bool {
-	if tracker.config.TolFun <= 0 || len(tracker.recentScores) < tracker.historyLimit {
+	if tracker.config.TolFun <= 0 || !tracker.hasCurrentScores ||
+		len(tracker.recentBest) < tracker.historyLimit {
 		return false
 	}
 
-	minimum := math.Inf(1)
-	maximum := math.Inf(-1)
+	minimum := tracker.currentScores.minimum
+	maximum := tracker.currentScores.maximum
 
-	for _, scores := range tracker.recentScores {
-		minimum = min(minimum, scores.minimum)
-		maximum = max(maximum, scores.maximum)
+	for _, score := range tracker.recentBest {
+		minimum = min(minimum, score)
+		maximum = max(maximum, score)
 	}
 
 	return maximum-minimum <= tracker.config.TolFun
 }
 
-func tolXReached(state *strategyState, tolerance float64) bool {
+// tolXReached reports whether the distribution has shrunk below TolX, which
+// Hansen defines relative to the initial step size (default 1e-12 * sigma^(0)).
+// Following purecma it uses max(D) rather than the per-coordinate sqrt(C_ii),
+// which is the conservative simplification: max(D) >= max_i sqrt(C_ii).
+func tolXReached(state *strategyState, initialSigma, tolerance float64) bool {
 	if tolerance <= 0 {
 		return false
 	}
@@ -226,33 +274,64 @@ func tolXReached(state *strategyState, tolerance float64) bool {
 		maximum = max(maximum, math.Abs(value))
 	}
 
-	for _, value := range state.d {
-		maximum = max(maximum, value)
-	}
+	maximum = max(maximum, maxAxisScale(state.d))
 
-	return state.sigma*maximum <= tolerance
+	return state.sigma*maximum <= initialSigma*tolerance
 }
 
-func tolXUpReached(state *strategyState, initialSigma, tolerance float64) bool {
+// tolXUpReached reports whether sigma * max(D) has grown by more than TolXUp
+// over its initial value. initialAxisScale is max(D^(0)); a non-positive value
+// means no usable initial state was seen and the identity is assumed.
+func tolXUpReached(state *strategyState, initialSigma, initialAxisScale, tolerance float64) bool {
 	if tolerance <= 0 {
 		return false
 	}
 
+	reference := initialAxisScale
+	if reference <= 0 {
+		reference = 1
+	}
+
+	return state.sigma*maxAxisScale(state.d) >= initialSigma*reference*tolerance
+}
+
+func maxAxisScale(axisScales []float64) float64 {
 	maximum := 0.0
-	for _, value := range state.d {
+	for _, value := range axisScales {
 		maximum = max(maximum, value)
 	}
 
-	return state.sigma*maximum >= initialSigma*tolerance
+	return maximum
 }
 
+// covarianceConditionNumber returns cond(C) from the axis scales in D. D holds
+// standard deviations, so the condition number is max(d)^2 / min(d)^2. The
+// ratio is squared rather than the extremes, which avoids both an intermediate
+// slice and an overflow on a wide spectrum.
 func covarianceConditionNumber(axisScales []float64) float64 {
-	eigenvalues := make([]float64, len(axisScales))
-	for index, scale := range axisScales {
-		eigenvalues[index] = scale * scale
+	if len(axisScales) == 0 {
+		return 0
 	}
 
-	return conditionNumber(eigenvalues)
+	minimum := math.Inf(1)
+	maximum := 0.0
+
+	for _, scale := range axisScales {
+		if !isFinite(scale) || scale < 0 {
+			return math.Inf(1)
+		}
+
+		minimum = math.Min(minimum, scale)
+		maximum = math.Max(maximum, scale)
+	}
+
+	if minimum == 0 {
+		return math.Inf(1)
+	}
+
+	ratio := maximum / minimum
+
+	return ratio * ratio
 }
 
 func noEffectAxis(state *strategyState, iteration int) bool {

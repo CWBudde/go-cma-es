@@ -29,8 +29,12 @@ type strategyState struct {
 }
 
 type candidate struct {
-	x                   []float64
-	y                   []float64
+	x []float64
+	y []float64
+	// z is the standard normal draw that produced y. It is sampling-only:
+	// boundary handling repairs x and recomputes y without touching z, so z
+	// must never be read after applyBoundaryHandling has run. It is retained
+	// because the sampling equations x = m + sigma*B*D*z are tested directly.
 	z                   []float64
 	evaluationX         []float64
 	cost                float64
@@ -46,6 +50,7 @@ type optimizationRun struct {
 	tracker          *convergenceTracker
 	reason           TerminationReason
 	curve            []float64
+	generationCurve  []float64
 	sigmaHistory     []float64
 	conditionHistory []float64
 	options          runOptions
@@ -63,6 +68,8 @@ func Optimize(config *Config) (*Result, error) {
 // OptimizeContext runs CMA-ES, honoring context cancellation.
 // Random samples are prepared on the calling goroutine before any objective
 // evaluations begin, making seeded serial and parallel runs bit-identical.
+// Config is treated as read-only, so the same configuration can be optimized
+// repeatedly and shared between concurrent runs that supply their own Seed.
 func OptimizeContext(ctx context.Context, config *Config, options ...RunOption) (*Result, error) {
 	if ctx == nil {
 		return nil, errors.New("context must not be nil")
@@ -95,6 +102,8 @@ func OptimizeContext(ctx context.Context, config *Config, options ...RunOption) 
 
 	runErr := run.execute(ctx, rng)
 	if runErr != nil {
+		logOptimizationFailed(ctx, resolved.logger, runErr)
+
 		return nil, runErr
 	}
 
@@ -118,6 +127,7 @@ func newOptimizationRun(config *Config, options runOptions) *optimizationRun {
 		tracker: newConvergenceTracker(config.Convergence, config.Constraints,
 			state.sigma, config.ProblemSize, config.Lambda),
 		curve:            make([]float64, 0, config.MaxIterations),
+		generationCurve:  make([]float64, 0, config.MaxIterations),
 		sigmaHistory:     make([]float64, 0, config.MaxIterations),
 		conditionHistory: make([]float64, 0, config.MaxIterations),
 		best:             Best{Cost: math.Inf(1), ConstraintViolation: math.Inf(1)},
@@ -192,6 +202,12 @@ func (run *optimizationRun) executeGeneration(
 	return run.shouldStop(population), nil
 }
 
+// handleEvaluationError ends a partially evaluated generation. The candidates
+// that were evaluated before the cancellation still count towards the best so
+// far, but the generation is not completed: the distribution is not updated and
+// no history entry is recorded, so the histories keep one entry per completed
+// iteration. Boundary penalties are deliberately not assigned here, because
+// they only affect selection ranking and this generation is never ranked.
 func (run *optimizationRun) handleEvaluationError(
 	population []candidate,
 	evaluationErr error,
@@ -201,9 +217,7 @@ func (run *optimizationRun) handleEvaluationError(
 		return false, evaluationErr
 	}
 
-	partial := evaluatedCandidates(population)
-	assignBoundaryPenalties(partial, run.config.BoundaryMethod)
-	updateBest(&run.best, partial, run.config.Constraints)
+	updateBest(&run.best, evaluatedCandidates(population), run.config.Constraints)
 	run.reason = TerminationCancelled
 
 	return true, nil
@@ -214,21 +228,81 @@ func (run *optimizationRun) completeGeneration(
 	generation int,
 	population []candidate,
 ) {
+	generationBest := generationBestCost(population, run.config.Constraints)
+
 	sortPopulation(population, run.config.Constraints)
 	updateDistribution(run.state, population, run.parameters, generation)
 	run.iterations = generation + 1
 
-	condition := covarianceConditionNumber(run.state.d)
+	reported := run.reportedState()
+	condition := covarianceConditionNumber(reported.d)
 	run.curve = append(run.curve, run.best.Cost)
+	run.generationCurve = append(run.generationCurve, generationBest)
 	run.sigmaHistory = append(run.sigmaHistory, run.state.sigma)
 	run.conditionHistory = append(run.conditionHistory, condition)
 	notifyLifecycle(
-		run.options, run.iterations, run.evaluations, run.best, population, run.state,
+		ctx, run.options, run.iterations, run.evaluations,
+		run.best, population, reported,
 	)
 	logIterationCompleted(
 		ctx, run.options.logger, run.iterations, run.evaluations,
 		run.best, run.state.sigma, condition,
 	)
+}
+
+// reportedState returns the state to report for the iteration that just
+// completed, with B and D consistent with its mean and sigma.
+//
+// The strategy itself refreshes its eigensystem lazily, so state.b and state.d
+// can lag the covariance by up to lambda/(10*n*(c1+cmu)) evaluations. That is
+// invisible to sampling but wrong for reporting: it would make an observed
+// ellipse describe an older covariance than the reported mean, and it would
+// turn the condition-number history into a step function that moves only when
+// the lazy decomposition happens to fire.
+//
+// A registered distribution observer therefore pays for one decomposition per
+// iteration; runs without one keep the lazy hot path untouched. Separable
+// covariance maintains D exactly every generation and needs no extra work.
+//
+// The fresh eigensystem is carried on a shallow copy of the state rather than
+// written back to it, so registering an observer cannot change the lazy
+// refresh schedule and therefore cannot change the run.
+func (run *optimizationRun) reportedState() *strategyState {
+	if run.options.distributionObserver == nil || run.state.mode == CovarianceSeparable {
+		return run.state
+	}
+
+	values, vectors := symmetricEigendecomposition(run.state.c)
+
+	d := make([]float64, len(values))
+	for index, value := range values {
+		d[index] = math.Sqrt(value)
+	}
+
+	reported := *run.state
+	reported.b = vectors
+	reported.d = d
+
+	return &reported
+}
+
+// generationBestCost returns the best raw cost of one evaluated generation,
+// ranked by the same feasibility rules as the global best. Boundary penalties
+// are excluded so that the value is comparable with GlobalBest.Cost.
+func generationBestCost(population []candidate, constraints *ConstraintConfig) float64 {
+	best := CandidateEvaluation{Cost: math.Inf(1), ConstraintViolation: math.Inf(1)}
+
+	for _, current := range population {
+		evaluation := CandidateEvaluation{
+			Cost:                current.cost,
+			ConstraintViolation: current.constraintViolation,
+		}
+		if BetterConstrainedCandidate(evaluation, best, constraints) {
+			best = evaluation
+		}
+	}
+
+	return best.Cost
 }
 
 func (run *optimizationRun) shouldStop(population []candidate) bool {
@@ -264,6 +338,10 @@ func (run *optimizationRun) result(seed int64, seedKnown bool) *Result {
 	}
 }
 
+// resolveRandomSource picks the generator for one run. Config.Rand is the
+// injection point and is never written to: the generated stream stays local to
+// the run and is reported through Result.Seed instead, which keeps a Config
+// reusable across runs and safe to share.
 func resolveRandomSource(config *Config) (*rand.Rand, int64, bool) {
 	if config.Rand != nil {
 		return config.Rand, 0, false
@@ -274,9 +352,7 @@ func resolveRandomSource(config *Config) (*rand.Rand, int64, bool) {
 		seed = *config.Seed
 	}
 
-	config.Rand = rand.New(rand.NewSource(seed))
-
-	return config.Rand, seed, true
+	return rand.New(rand.NewSource(seed)), seed, true
 }
 
 func newStrategyState(config *Config) *strategyState {
@@ -362,16 +438,15 @@ func transformNormal(b [][]float64, d, z []float64) []float64 {
 func evaluatePopulation(ctx context.Context, config *Config, population []candidate) (int, error) {
 	if !config.EnableParallel || len(population) < 2 {
 		for index := range population {
-			ctxErr := ctx.Err()
-			if ctxErr != nil {
-				return index, ctxErr
+			if ctx.Err() != nil {
+				return evaluationOutcome(ctx, index, len(population))
 			}
 
 			evaluateCandidate(&population[index], config)
 			population[index].evaluated = true
 		}
 
-		return len(population), nil
+		return evaluationOutcome(ctx, len(population), len(population))
 	}
 
 	workerCount := config.MaxWorkers
@@ -410,14 +485,33 @@ func evaluatePopulation(ctx context.Context, config *Config, population []candid
 			close(jobs)
 			workers.Wait()
 
-			return int(evaluated.Load()), ctx.Err()
+			return evaluationOutcome(ctx, int(evaluated.Load()), len(population))
 		}
 	}
 
 	close(jobs)
 	workers.Wait()
 
-	return int(evaluated.Load()), ctx.Err()
+	return evaluationOutcome(ctx, int(evaluated.Load()), len(population))
+}
+
+// evaluationOutcome reports a cancellation only for a genuinely partial
+// generation. A cancellation that arrives once every candidate has been
+// evaluated leaves the generation complete and is picked up by the run loop
+// before the next one, so the serial and the parallel path agree on which
+// generations are completed and which are abandoned.
+func evaluationOutcome(ctx context.Context, evaluated, populationSize int) (int, error) {
+	if evaluated >= populationSize {
+		return populationSize, nil
+	}
+
+	err := ctx.Err()
+	if err == nil {
+		// Unreachable: a candidate is only skipped after the context is done.
+		err = context.Canceled
+	}
+
+	return evaluated, err
 }
 
 func evaluatedCandidates(population []candidate) []candidate {

@@ -12,6 +12,21 @@ import (
 	"path/filepath"
 )
 
+// configFileVersion is the schema version SaveConfig stamps into every file.
+// Bump it whenever a Config field is renamed or removed, so an older file fails
+// with a version message instead of an unknown-field parse error.
+const configFileVersion = 1
+
+// configFile is the persisted shape: the Config fields inline, plus the schema
+// guard. The version lives here rather than on Config so it cannot be mistaken
+// for a run parameter. A file without the key predates the guard and is read as
+// the current version.
+type configFile struct {
+	*Config
+
+	FormatVersion int `json:"format_version"`
+}
+
 // LoadConfig reads and validates a configuration written by SaveConfig.
 // ObjectiveFunc, Rand, and constraint callbacks are not serializable and must
 // be restored by the caller before the loaded configuration can be optimized.
@@ -22,12 +37,19 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	config := &Config{}
+	file := configFile{Config: config}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 
-	err = decoder.Decode(config)
+	err = decoder.Decode(&file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	// Zero means the key was absent, which predates the guard.
+	if file.FormatVersion < 0 || file.FormatVersion > configFileVersion {
+		return nil, fmt.Errorf("unsupported config format_version %d (this build writes %d)",
+			file.FormatVersion, configFileVersion)
 	}
 
 	trailingErr := decoder.Decode(&struct{}{})
@@ -48,13 +70,15 @@ func LoadConfig(path string) (*Config, error) {
 }
 
 // SaveConfig writes config as indented JSON, creating or truncating path.
-// Function fields and Rand are omitted because they cannot be serialized.
+// Function fields and Rand are omitted because they cannot be serialized. The
+// file carries a format_version key that LoadConfig checks.
 func SaveConfig(config *Config, path string) error {
 	if config == nil {
 		return errors.New("config must not be nil")
 	}
 
-	data, err := json.MarshalIndent(config, "", "  ")
+	data, err := json.MarshalIndent(
+		configFile{Config: config, FormatVersion: configFileVersion}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -77,9 +101,26 @@ func validateWithoutObjective(config *Config) error {
 		probe.ObjectiveFunc = placeholderObjective
 	}
 
+	// Constraint callbacks are as unserializable as ObjectiveFunc, so the file
+	// itself cannot carry them and LoadConfig must not demand them. The probe
+	// stands one in, on a copy so the loaded config keeps its empty constraint
+	// set: the caller's own Validate then fails loudly until they reattach.
+	if probe.Constraints != nil {
+		constraints := *probe.Constraints
+		if len(constraints.Inequalities) == 0 && len(constraints.Equalities) == 0 {
+			constraints.Inequalities = []ConstraintFunction{placeholderConstraint}
+		}
+
+		probe.Constraints = &constraints
+	}
+
 	return probe.Validate()
 }
 
 func placeholderObjective(_ []float64) float64 {
+	return 0
+}
+
+func placeholderConstraint(_ []float64) float64 {
 	return 0
 }

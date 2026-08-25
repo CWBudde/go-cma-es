@@ -34,8 +34,17 @@ func symmetricRankOneUpdate(matrix [][]float64, scale float64, vector []float64)
 	}
 }
 
+// matrixVectorProduct returns matrix * vector. The vector must be at least as
+// long as the widest row of the matrix; a shorter one is a caller bug and is
+// reported as such instead of as an opaque index panic.
 func matrixVectorProduct(matrix [][]float64, vector []float64) []float64 {
 	product := make([]float64, len(matrix))
+
+	for row := range matrix {
+		if len(matrix[row]) > len(vector) {
+			panic("cmaes: matrix-vector product requires a vector as long as each matrix row")
+		}
+	}
 
 	for row := range matrix {
 		for column, value := range matrix[row] {

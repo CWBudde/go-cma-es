@@ -8,9 +8,10 @@ import (
 
 func TestSymmetricEigendecompositionKnownAnswers(t *testing.T) {
 	tests := []struct {
-		name   string
-		matrix [][]float64
-		want   []float64
+		name      string
+		matrix    [][]float64
+		want      []float64
+		tolerance float64
 	}{
 		{
 			name: "diagonal",
@@ -19,7 +20,8 @@ func TestSymmetricEigendecompositionKnownAnswers(t *testing.T) {
 				{0, 1, 0},
 				{0, 0, 2},
 			},
-			want: []float64{1, 2, 4},
+			want:      []float64{1, 2, 4},
+			tolerance: 1e-15,
 		},
 		{
 			name: "two by two rotation",
@@ -27,9 +29,15 @@ func TestSymmetricEigendecompositionKnownAnswers(t *testing.T) {
 				{1.75, -1.299038105676658},
 				{-1.299038105676658, 3.25},
 			},
-			want: []float64{1, 4},
+			want:      []float64{1, 4},
+			tolerance: 1e-15,
 		},
 		{
+			// The reference spectrum is independently checkable: its sum
+			// reproduces the exact trace 1 + 1/3 + 1/5 + 1/7 + 1/9 + 1/11 and
+			// its product the exact determinant 1/186313420339200000. Both are
+			// asserted for the computed spectrum in
+			// TestSymmetricEigendecompositionHilbertInvariants.
 			name:   "Hilbert six",
 			matrix: hilbertMatrix(6),
 			want: []float64{
@@ -40,6 +48,15 @@ func TestSymmetricEigendecompositionKnownAnswers(t *testing.T) {
 				2.4236087057520955e-1,
 				1.6188998589243391,
 			},
+			// The smallest eigenvalue is 1.08e-7 and sets the tolerance for the
+			// whole case. Cyclic Jacobi stops once the largest off-diagonal
+			// entry is below jacobiTolerance times the largest diagonal entry,
+			// i.e. at an absolute residual of about 1.6e-14, which bounds the
+			// absolute error of every eigenvalue. Against 1.08e-7 that is a
+			// relative bound of 1.5e-7; the sweeps in fact land four orders
+			// tighter, so 1e-9 is asserted. The larger eigenvalues are pinned
+			// far more tightly by the trace invariant below.
+			tolerance: 1e-9,
 		},
 	}
 
@@ -47,7 +64,7 @@ func TestSymmetricEigendecompositionKnownAnswers(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			values, vectors := symmetricEigendecomposition(test.matrix)
 			for index, want := range test.want {
-				assertClose(t, values[index], want, 1e-12)
+				assertClose(t, values[index], want, test.tolerance)
 			}
 
 			assertReconstruction(t, test.matrix, values, vectors)
@@ -56,23 +73,133 @@ func TestSymmetricEigendecompositionKnownAnswers(t *testing.T) {
 	}
 }
 
+// TestSymmetricEigendecompositionHilbertInvariants pins the tiny end of an
+// ill-conditioned spectrum against two exact closed forms rather than against
+// a single computed number: the trace and the determinant of the Hilbert
+// matrix. The trace pins the large end to full double precision, while the
+// determinant is the product of all six eigenvalues and is therefore only as
+// accurate as the smallest one, 1.08e-7, allows.
+func TestSymmetricEigendecompositionHilbertInvariants(t *testing.T) {
+	values, _ := symmetricEigendecomposition(hilbertMatrix(6))
+
+	sum := 0.0
+	product := 1.0
+
+	for _, value := range values {
+		sum += value
+		product *= value
+	}
+
+	trace := 1 + 1.0/3 + 1.0/5 + 1.0/7 + 1.0/9 + 1.0/11
+	determinant := 1 / 186313420339200000.0
+
+	assertClose(t, sum, trace, 1e-15)
+	assertClose(t, product, determinant, 1e-9)
+}
+
+// TestSymmetricEigendecompositionIllConditioned uses a matrix whose exact
+// spectrum is {a-b, a+b, 1e8} for the stored a = 0.5 and b = nextafter(0.5, 0),
+// so the two small eigenvalues are 5.551115123125783e-17 (one ulp of 0.5) and
+// 0.9999999999999999. The smallest sits far below the eigenvalue floor, so the
+// decomposition must report it as the floor rather than as zero, and the
+// condition number must stay finite and below the default ConditionCov.
 func TestSymmetricEigendecompositionIllConditioned(t *testing.T) {
-	const small = 1e-16
+	const large = 1e8
+
+	upper := 0.5
+	lower := math.Nextafter(0.5, 0)
 
 	matrix := [][]float64{
-		{0.5 + small/2, 0.5 - small/2, 0},
-		{0.5 - small/2, 0.5 + small/2, 0},
-		{0, 0, 1e8},
+		{upper, lower, 0},
+		{lower, upper, 0},
+		{0, 0, large},
 	}
 
 	values, vectors := symmetricEigendecomposition(matrix)
 
-	if conditionNumber(values) < 1e20 {
-		t.Fatalf("condition number = %g, want at least 1e20", conditionNumber(values))
+	assertClose(t, values[1], upper+lower, 1e-15)
+	assertClose(t, values[2], large, 1e-15)
+	assertClose(t, values[0], eigenvalueFloorRatio*large, 1e-15)
+
+	if values[0] <= 0 {
+		t.Fatalf("smallest eigenvalue = %g, want strictly positive", values[0])
 	}
 
-	assertReconstruction(t, matrix, values, vectors)
+	condition := conditionNumber(values)
+	if math.IsInf(condition, 0) || condition > defaultConditionCov {
+		t.Fatalf("condition number = %g, want finite and at most %g", condition, defaultConditionCov)
+	}
+
 	assertOrthonormal(t, vectors)
+
+	// The clamped axis is the only one that is perturbed, and it can only shift
+	// the reconstruction by the floor itself.
+	assertReconstructionWithin(t, matrix, values, vectors, 4*eigenvalueFloorRatio*large)
+}
+
+// TestSymmetricEigendecompositionSingular decomposes a genuinely singular
+// matrix. C = [[1,1,0],[1,1,0],[0,0,1]] is the direct sum of [[1,1],[1,1]],
+// whose eigenvalues are 0 and 2, and the 1x1 block 1, so the exact spectrum is
+// {0, 1, 2}.
+func TestSymmetricEigendecompositionSingular(t *testing.T) {
+	matrix := [][]float64{
+		{1, 1, 0},
+		{1, 1, 0},
+		{0, 0, 1},
+	}
+
+	values, vectors := symmetricEigendecomposition(matrix)
+
+	for index, value := range values {
+		if value <= 0 {
+			t.Fatalf("eigenvalue[%d] = %g, want strictly positive", index, value)
+		}
+	}
+
+	assertClose(t, values[0], 2*eigenvalueFloorRatio, 1e-15)
+	assertClose(t, values[1], 1, 1e-14)
+	assertClose(t, values[2], 2, 1e-14)
+
+	condition := conditionNumber(values)
+	if math.IsInf(condition, 0) || condition > defaultConditionCov {
+		t.Fatalf("condition number = %g, want finite and at most %g", condition, defaultConditionCov)
+	}
+
+	assertOrthonormal(t, vectors)
+	assertReconstructionWithin(t, matrix, values, vectors, 1e-11)
+}
+
+// TestSymmetricEigendecompositionIndefinite decomposes [[0,1],[1,0]], whose
+// exact eigenvalues are -1 and +1 with eigenvectors (1,-1)/sqrt(2) and
+// (1,1)/sqrt(2). Active CMA can make an intermediate covariance indefinite
+// like this; the negative eigenvalue must come back as a small positive number
+// rather than as zero, and the basis must still be the exact one.
+func TestSymmetricEigendecompositionIndefinite(t *testing.T) {
+	matrix := [][]float64{
+		{0, 1},
+		{1, 0},
+	}
+
+	values, vectors := symmetricEigendecomposition(matrix)
+
+	assertClose(t, values[0], eigenvalueFloorRatio, 1e-15)
+	assertClose(t, values[1], 1, 1e-14)
+
+	if values[0] <= 0 {
+		t.Fatalf("clamped eigenvalue = %g, want strictly positive", values[0])
+	}
+
+	condition := conditionNumber(values)
+	if math.IsInf(condition, 0) || condition > defaultConditionCov {
+		t.Fatalf("condition number = %g, want finite and at most %g", condition, defaultConditionCov)
+	}
+
+	assertOrthonormal(t, vectors)
+
+	// The eigenvector for +1 is (1,1)/sqrt(2) up to an overall sign.
+	sign := math.Copysign(1, vectors[0][1])
+	assertClose(t, sign*vectors[0][1], math.Sqrt2/2, 1e-15)
+	assertClose(t, sign*vectors[1][1], math.Sqrt2/2, 1e-15)
 }
 
 func TestSymmetricEigendecompositionOneDimension(t *testing.T) {
@@ -97,12 +224,64 @@ func TestSymmetricEigendecompositionGuards(t *testing.T) {
 	}
 	values, vectors := symmetricEigendecomposition(matrix)
 
-	if values[0] != 0 {
-		t.Fatalf("negative eigenvalue was not floored: %g", values[0])
+	// The working copy is symmetrized to diag(-1e-15, 3), so the exact
+	// spectrum is {-1e-15, 3} and the negative eigenvalue must be lifted to
+	// the floor instead of to zero.
+	if values[0] <= 0 {
+		t.Fatalf("negative eigenvalue was not lifted above zero: %g", values[0])
 	}
 
-	symmetrized := [][]float64{{-1e-15, 0}, {0, 3}}
-	assertReconstruction(t, symmetrized, values, vectors)
+	assertClose(t, values[0], 3*eigenvalueFloorRatio, 1e-15)
+	assertClose(t, values[1], 3, 1e-15)
+	assertOrthonormal(t, vectors)
+}
+
+// TestSymmetricEigendecompositionNegativeSemidefinite covers the degenerate
+// case where no eigenvalue is positive and there is therefore no scale for the
+// floor to be relative to. diag(-2, -1) has exactly that spectrum.
+func TestSymmetricEigendecompositionNegativeSemidefinite(t *testing.T) {
+	values, vectors := symmetricEigendecomposition([][]float64{
+		{-2, 0},
+		{0, -1},
+	})
+
+	for index, value := range values {
+		assertClose(t, value, 1, 0)
+		if value <= 0 {
+			t.Fatalf("eigenvalue[%d] = %g, want strictly positive", index, value)
+		}
+	}
+
+	assertOrthonormal(t, vectors)
+}
+
+// TestSymmetricEigendecompositionSweepBudget pins the convergence signal that
+// symmetricEigendecomposition turns into a panic. A matrix that needs at least
+// one rotation cannot be diagonal after zero sweeps, while the same matrix
+// converges within the production budget.
+func TestSymmetricEigendecompositionSweepBudget(t *testing.T) {
+	matrix := [][]float64{
+		{1.75, -1.299038105676658},
+		{-1.299038105676658, 3.25},
+	}
+
+	if _, _, converged := symmetricEigendecompositionWithStatus(matrix, 0); converged {
+		t.Fatal("zero sweeps reported convergence for a non-diagonal matrix")
+	}
+
+	values, _, converged := symmetricEigendecompositionWithStatus(matrix, maxJacobiSweeps)
+	if !converged {
+		t.Fatal("the production sweep budget did not converge")
+	}
+
+	assertClose(t, values[0], 1, 1e-14)
+	assertClose(t, values[1], 4, 1e-14)
+
+	// An already diagonal matrix is converged before the first sweep, so the
+	// budget is irrelevant to it.
+	if _, _, converged := symmetricEigendecompositionWithStatus([][]float64{{2, 0}, {0, 5}}, 0); !converged {
+		t.Fatal("a diagonal matrix was reported as not converged")
+	}
 }
 
 func TestSymmetricEigendecompositionRejectsNonSquareMatrix(t *testing.T) {
@@ -155,11 +334,33 @@ func benchmarkCovariance(size int) [][]float64 {
 	return matrix
 }
 
+// assertReconstruction checks B*diag(values)*B^T against the original matrix
+// with an absolute tolerance scaled by the largest entry of that matrix, which
+// is the scale a backward-stable decomposition can be held to.
 func assertReconstruction(
 	t *testing.T,
 	matrix [][]float64,
 	values []float64,
 	vectors [][]float64,
+) {
+	t.Helper()
+
+	scale := 0.0
+	for row := range matrix {
+		for column := range matrix[row] {
+			scale = math.Max(scale, math.Abs(matrix[row][column]))
+		}
+	}
+
+	assertReconstructionWithin(t, matrix, values, vectors, 1e-12*math.Max(1, scale))
+}
+
+func assertReconstructionWithin(
+	t *testing.T,
+	matrix [][]float64,
+	values []float64,
+	vectors [][]float64,
+	tolerance float64,
 ) {
 	t.Helper()
 
@@ -170,7 +371,12 @@ func assertReconstruction(
 				got += vectors[row][index] * value * vectors[column][index]
 			}
 
-			assertClose(t, got, matrix[row][column], 1e-12)
+			if math.Abs(got-matrix[row][column]) > tolerance {
+				t.Fatalf(
+					"reconstruction[%d][%d] = %.17g, want %.17g (tolerance %g)",
+					row, column, got, matrix[row][column], tolerance,
+				)
+			}
 		}
 	}
 }
@@ -190,16 +396,28 @@ func assertOrthonormal(t *testing.T, vectors [][]float64) {
 				want = 1
 			}
 
-			assertClose(t, got, want, 1e-12)
+			// The accumulated rotations drift by about n*eps from exact
+			// orthonormality, which is 1e-14 at the n=56 covariance below.
+			if math.Abs(got-want) > 1e-13 {
+				t.Fatalf("vectors[:,%d].vectors[:,%d] = %.17g, want %.17g", left, right, got, want)
+			}
 		}
 	}
 }
 
+// assertClose compares got and want with a relative tolerance, so that an
+// assertion on a tiny eigenvalue is exactly as strict as one on a large
+// eigenvalue. A want of zero degenerates to an absolute comparison, and a
+// tolerance of zero still means bit equality.
 func assertClose(t *testing.T, got, want, tolerance float64) {
 	t.Helper()
 
-	scale := math.Max(1, math.Abs(want))
+	scale := math.Abs(want)
+	if scale == 0 {
+		scale = 1
+	}
+
 	if math.Abs(got-want) > tolerance*scale {
-		t.Fatalf("got %.17g, want %.17g (tolerance %g)", got, want, tolerance)
+		t.Fatalf("got %.17g, want %.17g (relative tolerance %g)", got, want, tolerance)
 	}
 }
