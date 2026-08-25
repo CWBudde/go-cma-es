@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="CMA-ES cost, step size, and covariance condition telemetry on one timeline." />
+    <title>Telemetry · go-cma-es</title><link rel="icon" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&amp;family=Space+Grotesk:wght@400;500;600;700&amp;display=swap" rel="stylesheet" /><link rel="stylesheet" href="style.css" />
+  </head>
+  <body><main class="shell">
+    <header class="masthead"><a class="brand" href="index.html"><img src="favicon.svg" alt="" /><span>go-cma-es <b>lab</b></span></a><nav><a href="index.html">Covariance</a><a href="compare.html">Metric test</a><a href="charts.html" aria-current="page">Telemetry</a><a href="restart.html">Restarts</a><a href="https://github.com/CWBudde/go-cma-es">Source</a></nav></header>
+    <section class="hero"><div><p class="eyebrow">Distribution health on one cursor</p><h1>Best cost, σ, and condition tell different parts of the story.</h1></div><p class="lede">Cost says whether the run is winning. <strong>σ</strong> says how bold it is. <strong>condition(C)</strong> says how anisotropic its learned metric has become. The package records all three per completed generation.</p></section>
+    <p class="status" id="status" data-state="loading">Loading WebAssembly…</p>
+    <section class="toolbar">
+      <div class="field"><label for="landscape">Landscape</label><select id="landscape"></select></div>
+      <div class="field"><label for="seed">Seed</label><input id="seed" type="number" value="42" /></div>
+      <div class="field"><label for="lambda">λ</label><input id="lambda" type="number" min="4" max="96" value="8" /></div>
+      <div class="field"><label for="sigma">σ₀</label><input id="sigma" type="number" min=".001" step=".01" value=".42" /></div>
+      <div class="field"><label for="iterations">Generation cap</label><input id="iterations" type="number" min="1" max="320" value="160" /></div>
+      <button class="primary" id="run">Run</button>
+      <div class="field"><label for="mode">Covariance</label><select id="mode"><option value="full">full</option><option value="separable">separable</option></select></div>
+      <div class="check"><input id="active" type="checkbox" checked /><label for="active">Active CMA</label></div>
+    </section>
+    <section class="chart-grid">
+      <article class="chart-card"><div class="caption"><h2>Objective · logarithmic</h2><span class="readout"><i style="color: var(--best)">●</i> global best &nbsp; <i style="color: var(--mean)">●</i> generation best</span></div><canvas id="costChart" width="650" height="330"></canvas></article>
+      <article class="chart-card"><div class="caption"><h2>Distribution · logarithmic</h2><span class="readout"><i style="color: var(--covariance)">●</i> σ &nbsp; <i style="color: var(--baseline)">●</i> condition(C)</span></div><canvas id="stateChart" width="650" height="330"></canvas></article>
+    </section>
+    <div class="transport"><button id="play" aria-pressed="false">Play</button><button id="step">Step</button><input type="range" id="scrub" min="0" max="0" value="0" /><select id="speed"><option value=".5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select><span class="readout" id="frameReadout">—</span></div>
+    <p class="note mono" id="readout">—</p>
+    <section class="copy"><div><h2>Global versus generation best</h2><p>The rose curve is monotone because it retains the incumbent. The amber curve is the best member of the current population and can rise. Their separation exposes ordinary fitness oscillation instead of hiding it.</p></div><div><h2>Stopping has a state</h2><p>TolX, TolXUp, the covariance condition limit, and no-effect checks read this distribution state directly. This is how CMA-ES stops a numerically exhausted run rather than spending a budget on motion too small to change the mean.</p></div></section>
+    <footer><span id="buildInfo">—</span><span>histories from Result and DistributionSnapshot</span></footer>
+  </main><script src="wasm_exec.js"></script><script src="boot.js"></script><script src="render.js"></script><script src="charts.js"></script></body>
+</html>

@@ -25,8 +25,9 @@
 //
 // This package is under construction. Active full-covariance and separable
 // strategies, box-boundary handling, nonlinear constraints, convergence
-// criteria, and lifecycle observers are implemented; PLAN.md in the repository
-// root is the single source of truth for later variant work.
+// criteria, lifecycle observers, and the WebAssembly showcase are implemented;
+// PLAN.md in the repository root is the single source of truth for later
+// variant work.
 //
 // # Conventions
 //

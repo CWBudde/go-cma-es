@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="CMA-ES versus fixed isotropic search on a condition-one-million ellipsoid." />
+    <title>Metric Test · go-cma-es</title><link rel="icon" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&amp;family=Space+Grotesk:wght@400;500;600;700&amp;display=swap" rel="stylesheet" /><link rel="stylesheet" href="style.css" />
+  </head>
+  <body><main class="shell">
+    <header class="masthead"><a class="brand" href="index.html"><img src="favicon.svg" alt="" /><span>go-cma-es <b>lab</b></span></a><nav><a href="index.html">Covariance</a><a href="compare.html" aria-current="page">Metric test</a><a href="charts.html">Telemetry</a><a href="restart.html">Restarts</a><a href="https://github.com/CWBudde/go-cma-es">Source</a></nav></header>
+    <section class="hero"><div><p class="eyebrow">Same normals · same seed · same budget</p><h1>A learned metric against a fixed isotropic step.</h1></div><p class="lede">Both searches use weighted recombination and see the same condition-10⁶ rotated ellipsoid. Only the left side adapts covariance and σ. The right side keeps <strong>σI fixed</strong>.</p></section>
+    <p class="status" id="status" data-state="loading">Loading WebAssembly…</p>
+    <section class="toolbar">
+      <div class="field"><label for="seed">Seed</label><input id="seed" type="number" value="42" /></div>
+      <div class="field"><label for="lambda">λ</label><input id="lambda" type="number" min="4" max="96" value="8" /></div>
+      <div class="field"><label for="sigma">σ₀ / fixed σ</label><input id="sigma" type="number" min=".001" step=".01" value=".62" /></div>
+      <div class="field"><label for="iterations">Generations</label><input id="iterations" type="number" min="1" max="320" value="120" /></div>
+      <div class="field"><label>Budget</label><span class="readout" id="budget">—</span></div><button class="primary" id="run">Compare</button>
+    </section>
+    <section class="compare-grid">
+      <article class="compare-card"><div class="caption"><h2>CMA-ES · active full C</h2><span>live <b id="cmaLive">—</b> · final <b id="cmaFinal">—</b></span></div><canvas id="cmaStage" width="650" height="650"></canvas></article>
+      <article class="compare-card"><div class="caption"><h2>Fixed isotropic search</h2><span>live <b id="isoLive">—</b> · final <b id="isoFinal">—</b></span></div><canvas id="isoStage" width="650" height="650"></canvas></article>
+    </section>
+    <div class="transport"><button id="play" aria-pressed="false">Play</button><button id="step">Step</button><input type="range" id="scrub" min="0" max="0" value="0" /><select id="speed"><option value=".5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select><span class="readout" id="frameReadout">—</span></div>
+    <section class="copy"><div><h2>Why this is the test</h2><p>A fixed circular proposal must choose between progress along the flat direction and overshooting the narrow direction. CMA-ES can rotate and stretch its proposal, turning a million-to-one objective into a much better conditioned search problem.</p></div><div><h2>What “same” means</h2><p>Both arms start at the same mean, use the same λ, σ₀, seed, generation count, and standard-normal draw order. The control performs the same log-weighted recombination but never adapts σ or covariance.</p></div></section>
+    <footer><span id="buildInfo">—</span><span>condition number 10⁶ · 45° rotation</span></footer>
+  </main><script src="wasm_exec.js"></script><script src="boot.js"></script><script src="render.js"></script><script src="compare.js"></script></body>
+</html>

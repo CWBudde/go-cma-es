@@ -6,9 +6,10 @@ Strategy** (CMA-ES), following Hansen's tutorial (arXiv:1604.00772).
 Third in a family with [Mayfly](https://github.com/cwbudde/mayfly) and
 [Dragonfly](https://github.com/CWBudde/dragonfly), and deliberately unlike both of them.
 
-> **Status: under construction.** Phase 6 provides active full-covariance CMA-ES and
-> sep-CMA-ES, with box-boundary handling, nonlinear constraints, convergence criteria,
-> and lifecycle observers. Restarts and block-diagonal covariance remain later phases.
+> **Status: under construction.** Phases 0–6 and 12 provide active full-covariance
+> CMA-ES, sep-CMA-ES, box-boundary handling, nonlinear constraints, convergence
+> criteria, lifecycle observers, and a WebAssembly showcase. Restart and block-diagonal
+> library variants remain later phases.
 > [`PLAN.md`](PLAN.md) is the source of truth for progress.
 
 ## Why
@@ -44,7 +45,20 @@ CMA-ES answers both halves of that:
 | Block-diagonal CMA-ES       | planned | one small block per parameter group; matches structured problems |
 | IPOP / BIPOP restarts       | planned | population-doubling restart strategies for multimodal problems   |
 | Deterministic parallel eval | ready   | bit-identical to a serial run of the same seed                   |
-| WebAssembly demo            | planned | watch the covariance ellipse align with the valley               |
+| WebAssembly demo            | ready   | watch the covariance ellipse align with the valley               |
+
+## Live demo
+
+Open the [Covariance Lab](https://cwbudde.github.io/go-cma-es/) to watch the actual Go
+library, compiled to WebAssembly, optimize four 2-D landscapes. Its headline view replays
+the sampled population, updated mean, best trail, and the 2σ ellipse reconstructed from
+`DistributionSnapshot`.
+
+The companion pages put CMA-ES beside a fixed isotropic search on a rotated
+condition-10⁶ ellipsoid, align best cost with σ and covariance-condition histories, and
+map an IPOP-style population-doubling schedule across Rastrigin basins. The restart page
+composes the current single-run API in the demo layer; it does not claim the planned
+Phase 7 restart API exists.
 
 ## Install
 

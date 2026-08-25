@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Watch the Go CMA-ES library learn a covariance ellipse in the browser." />
+    <title>Covariance Lab · go-cma-es</title>
+    <link rel="icon" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&amp;family=Space+Grotesk:wght@400;500;600;700&amp;display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="masthead">
+        <a class="brand" href="index.html"><img src="favicon.svg" alt="" /><span>go-cma-es <b>lab</b></span></a>
+        <nav>
+          <a href="index.html" aria-current="page">Covariance</a>
+          <a href="compare.html">Metric test</a>
+          <a href="charts.html">Telemetry</a>
+          <a href="restart.html">Restarts</a>
+          <a href="https://github.com/CWBudde/go-cma-es">Source</a>
+        </nav>
+      </header>
+
+      <section class="hero">
+        <div>
+          <p class="eyebrow">The learned metric, made visible</p>
+          <h1>Watch the search distribution learn the landscape.</h1>
+        </div>
+        <p class="lede">The pale points are one sampled generation. The amber point is its updated mean. The teal ring is the library's <strong>2σ covariance ellipse</strong> — it stretches, contracts, and rotates because CMA-ES is learning which steps work.</p>
+      </section>
+
+      <p class="status" id="status" data-state="loading">Loading WebAssembly…</p>
+
+      <section class="instrument">
+        <div class="stage-panel">
+          <div class="section-title"><h2>Sampling distribution</h2><small>rank-shaded objective</small></div>
+          <canvas id="stage" width="820" height="820"></canvas>
+          <div class="transport">
+            <button type="button" id="play" aria-pressed="false">Play</button>
+            <button type="button" id="step">Step</button>
+            <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Generation" />
+            <select id="speed" aria-label="Replay speed"><option value=".5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select>
+            <span class="readout" id="frameReadout">—</span>
+          </div>
+          <ul class="legend">
+            <li style="color: var(--ink)"><span class="key"></span>sample</li>
+            <li style="color: var(--mean)"><span class="key"></span>mean</li>
+            <li style="color: var(--covariance)"><span class="key ring"></span>2σ covariance</li>
+            <li style="color: var(--best)"><span class="key"></span>best trail</li>
+            <li><span class="key square"></span>known minimum</li>
+          </ul>
+        </div>
+
+        <aside class="controls">
+          <h3>Problem</h3>
+          <div class="field"><label for="landscape">Landscape</label><select id="landscape"></select></div>
+          <p class="note" id="landscapeNote"></p>
+          <h3 style="margin-top: 24px">Run</h3>
+          <div class="field-row">
+            <div class="field"><label for="seed">Seed</label><input id="seed" type="number" value="42" /></div>
+            <div class="field"><label for="lambda">λ population</label><input id="lambda" type="number" min="4" max="96" value="8" /></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label for="sigma">σ₀</label><input id="sigma" type="number" min=".001" step=".01" value=".42" /></div>
+            <div class="field"><label for="iterations">Generation cap</label><input id="iterations" type="number" min="1" max="320" value="120" /></div>
+          </div>
+          <div class="field"><label for="mode">Covariance</label><select id="mode"><option value="full">full · learns rotation</option><option value="separable">separable · diagonal only</option></select></div>
+          <div class="check"><input id="active" type="checkbox" checked /><label for="active">Active negative update</label></div>
+          <button class="primary" type="button" id="run">Run CMA-ES</button>
+        </aside>
+      </section>
+
+      <dl class="telemetry">
+        <div><dt>Generation</dt><dd id="tGeneration">—</dd></div>
+        <div><dt>Best cost</dt><dd id="tBest">—</dd></div>
+        <div><dt>σ</dt><dd id="tSigma">—</dd></div>
+        <div><dt>Condition C</dt><dd id="tCondition">—</dd></div>
+        <div><dt>Evaluations</dt><dd id="tEvals">—</dd></div>
+        <div><dt>Termination</dt><dd id="tTermination">—</dd></div>
+      </dl>
+
+      <section class="copy">
+        <div><h2>What the ellipse says</h2><p><strong>Orientation</strong> is correlation. <strong>Aspect ratio</strong> is learned relative scale. <strong>Overall size</strong> combines covariance with cumulative step-size adaptation. On Rosenbrock, watch the ring turn into the valley before it contracts.</p></div>
+        <div><h2>Actual package code</h2><p>The objective, population, mean, σ, eigensystem, and stopping reason all come from <code>github.com/CWBudde/go-cma-es</code> compiled to <code>js/wasm</code>. The canvas does not contain a second optimizer.</p></div>
+      </section>
+
+      <footer><span id="buildInfo">—</span><span>serve over HTTP · no framework · no bundler</span></footer>
+    </main>
+    <script src="wasm_exec.js"></script><script src="boot.js"></script><script src="render.js"></script><script src="app.js"></script>
+  </body>
+</html>
