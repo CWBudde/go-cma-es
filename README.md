@@ -51,7 +51,7 @@ CMA-ES answers both halves of that:
 ## Live demo
 
 Open the [Covariance Lab](https://cwbudde.github.io/go-cma-es/) to watch the actual Go
-library, compiled to WebAssembly, optimize four 2-D landscapes. Its headline view replays
+library, compiled to WebAssembly, optimize ten 2-D landscapes. Its headline view replays
 the sampled population, updated mean, best trail, and the 2σ ellipse reconstructed from
 `DistributionSnapshot`.
 

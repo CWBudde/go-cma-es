@@ -17,10 +17,15 @@ func TestLandscapeMinima(t *testing.T) {
 				t.Fatal("landscape has no documented minimum")
 			}
 
+			if spec.tolerance <= 0 {
+				t.Fatal("landscape declares no tolerance for its optimum")
+			}
+
 			for _, minimum := range spec.minima {
 				position := []float64{minimum[0], minimum[1]}
-				if cost := spec.objective(position); math.Abs(cost) > 1e-10 {
-					t.Fatalf("objective(%v) = %g, want zero", position, cost)
+				if cost := spec.objective(position); math.Abs(cost-spec.optimum) > spec.tolerance {
+					t.Fatalf("objective(%v) = %g, want %g within %g",
+						position, cost, spec.optimum, spec.tolerance)
 				}
 			}
 		})

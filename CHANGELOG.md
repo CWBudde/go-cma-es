@@ -56,6 +56,10 @@ refuse to resume across it.
   Michalewicz, DixonPrice, BentCigar, Discus, Weierstrass, HappyCat and
   ExpandedSchafferF6 -- plus the new n-dimensional `Himmelblau`. The WebAssembly demo now
   consumes the library functions instead of local copies (Phase 13).
+- Six further WebAssembly demo landscapes built on the library suite -- Sphere, Ackley,
+  Schwefel, Michalewicz, Zakharov and the expanded Schaffer F6 -- each with a tuned start
+  point and σ₀. `landscapeSpec` now records the expected optimum value and a tolerance,
+  so a landscape whose optimum is not exactly zero can still be asserted.
 
 - Per-dimension `Config.LowerBounds` and `Config.UpperBounds`. The scalar `LowerBound` and
   `UpperBound` still work and broadcast to every coordinate when the slices are nil.

@@ -4,8 +4,11 @@ Four pages run [github.com/CWBudde/go-cma-es](https://github.com/CWBudde/go-cma-
 compiled to `js/wasm`, with plain JavaScript and canvas as the display layer:
 
 - **`index.html` — Covariance Lab.** Replays sampled populations, the updated mean, and
-  the 2σ ellipse reconstructed from `DistributionSnapshot` on Rosenbrock, a rotated
-  condition-10⁶ ellipsoid, Rastrigin, or Himmelblau.
+  the 2σ ellipse reconstructed from `DistributionSnapshot` on any of ten landscapes:
+  Rosenbrock, a rotated condition-10⁶ ellipsoid, Rastrigin, Himmelblau, Sphere, Ackley,
+  Schwefel, Michalewicz, Zakharov, and the expanded Schaffer F6. Ackley and Schaffer are
+  drawn on tighter-than-standard bounds so their central funnel and their rings survive
+  the 150×150 sampling grid.
 - **`compare.html` — Metric Test.** Active full-covariance CMA-ES beside a fixed isotropic
   weighted search, using the same seed, Gaussian draw order, λ, σ₀, and evaluation budget.
 - **`charts.html` — Telemetry.** Global and per-generation best cost, σ, and covariance
@@ -56,7 +59,7 @@ not a common numerical cost scale.
 | `main.go` / `main_stub.go`                        | WASM export table and native-build stub                     |
 | `bridge.go`                                       | Panic containment and tolerant request readers              |
 | `marshal.go`                                      | Reusable JavaScript-owned typed-array buffers               |
-| `landscape.go`                                    | The four objective definitions and rank normalization       |
+| `landscape.go`                                    | The ten landscape specs and rank normalization              |
 | `demo.go`                                         | CMA histories, isotropic control, and restart orchestration |
 | `boot.js`                                         | Shared WASM loader, calls, sinks, and replay transport      |
 | `render.js`                                       | Landscapes, populations, ellipses, charts, and basin map    |

@@ -415,7 +415,10 @@ marshalling layer, plain JS and canvas — no framework, no bundler.
 - [x] `examples/wasm-demo/go.mod` with a `replace` onto the parent module;
       `scripts/build-wasm-demo.sh`; `boot.js` loading `wasm_exec.js`
 - [x] `landscape.go` + `render.js`: contour-shaded 2-D landscapes — Rosenbrock,
-      conditioned ellipsoid, Rastrigin, Himmelblau
+      conditioned ellipsoid, Rastrigin, Himmelblau, Sphere, Ackley, Schwefel,
+      Michalewicz, Zakharov, expanded Schaffer F6. Each spec carries its own optimum
+      value and tolerance, because Michalewicz's optimum is negative and Schwefel's
+      published minimizer and constant are both rounded
 - [x] `index.html` — the headline view: the sampled population, the mean, and the **2σ
       covariance ellipse** drawn from `DistributionSnapshot`. Play/pause/step, seed box,
       λ and σ₀ controls
