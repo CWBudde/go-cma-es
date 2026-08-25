@@ -110,3 +110,6 @@ examples/examples
 # `go build ./...` inside the demo module drops a binary named after it. The
 # rule above already catches it; naming it keeps the reason visible.
 /examples/wasm-demo/wasm-demo
+# A GOCACHE pointed inside examples/ drops a dotted directory, which the
+# examples/*/[a-z]* rule above does not match.
+examples/*/.*cache*/
