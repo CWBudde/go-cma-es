@@ -398,10 +398,16 @@ for every variant. The baseline is re-measured here, first.
       collapse table, so the mechanism claim is measured rather than asserted
 - [ ] Write the report in the consumer's house style: what was run, conditions, a result
       table with t and blocks-won, and an explicit "what this does not say" section
+- [x] Preserve the operator-stopped preliminary subset in the consumer: three completed
+      jobs and one interrupted IPOP job from the first paired block, with raw mechanism
+      trajectories and a descriptive report that performs no inferential statistics
 
 **Rationale**: That project's docs are unusually honest about what a measurement does and
 does not establish, and that discipline is why its negative results stay reusable. A
-CMA-ES report that did not meet the same bar would be worth less than no report.
+CMA-ES report that did not meet the same bar would be worth less than no report. The first
+campaign was intentionally stopped on 2026-08-25 once its several-day runtime was clear;
+the preliminary report lives at `../MayFlyCircleFit/docs/cmaes-preliminary-report.md` and
+does not satisfy any of the six twelve-block requirements above.
 
 ---
 
