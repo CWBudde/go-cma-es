@@ -58,6 +58,7 @@ func jsInfo(js.Value) any {
 			"sigma":   spec.sigma,
 			"initial": []any{spec.initial[0], spec.initial[1]},
 			"minima":  pointsToJS(spec.minima),
+			"basin":   spec.basinName,
 		})
 	}
 
@@ -361,7 +362,13 @@ func isotropicWeights(lambda, mu int) []float64 {
 }
 
 func jsRestart(opts js.Value) any {
-	spec, _ := lookupLandscape("rastrigin")
+	key := readString(opts, "landscape", "schaffer")
+
+	spec, ok := lookupLandscape(key)
+	if !ok {
+		return errorResult("unknown landscape %q", key)
+	}
+
 	baseSeed := int64(readFloat(opts, "seed", defaultSeed))
 	restarts := clampInt(readInt(opts, "restarts", 5), 2, 6)
 	iterations := clampInt(readInt(opts, "iterations", 55), 10, 100)
@@ -373,7 +380,7 @@ func jsRestart(opts js.Value) any {
 	config.LowerBound = spec.lower
 	config.UpperBound = spec.upper
 	config.InitialMean = []float64{spec.initial[0], spec.initial[1]}
-	config.InitialSigma = 1.25
+	config.InitialSigma = spec.sigma
 	config.Lambda = baseLambda
 	config.Mu = baseLambda / 2
 	config.MaxIterations = iterations
@@ -393,7 +400,15 @@ func jsRestart(opts js.Value) any {
 	markers := make([]float32, 0, len(result.Restarts)*4)
 	for _, record := range result.Restarts {
 		position := record.Best.Position
-		basinX, basinY := math.Round(position[0]), math.Round(position[1])
+
+		// Without a classifier the marker collapses onto the winner itself,
+		// which keeps the four-floats-per-run layout the renderer expects.
+		basinX, basinY := position[0], position[1]
+		if spec.basin != nil {
+			point := spec.basin(position)
+			basinX, basinY = point[0], point[1]
+		}
+
 		markers = append(markers,
 			float32(position[0]), float32(position[1]), float32(basinX), float32(basinY))
 		records = append(records, map[string]any{
@@ -407,6 +422,7 @@ func jsRestart(opts js.Value) any {
 	}
 
 	response := map[string]any{
+		"landscape": spec.key, "landscapeName": spec.name, "basinLabel": spec.basinName,
 		"records": records, "restarts": len(result.Restarts), "baseLambda": baseLambda,
 		"totalEvaluations": result.FuncEvalCount, "best": finiteNumber(result.GlobalBest.Cost),
 		"bestPosition": []any{result.GlobalBest.Position[0], result.GlobalBest.Position[1]},

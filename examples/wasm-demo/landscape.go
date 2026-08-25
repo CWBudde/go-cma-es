@@ -9,6 +9,12 @@ import (
 
 type landscapeSpec struct {
 	objective cmaes.ObjectiveFunction
+	// basin maps a run's winning position onto the local optimum it landed
+	// in, so a restart schedule can be read as basin coverage rather than as
+	// a column of final scalars. Nil where the landscape has no closed-form
+	// lattice of local optima.
+	basin     func([]float64) [2]float64
+	basinName string
 	key       string
 	name      string
 	note      string
@@ -43,6 +49,7 @@ var landscapes = []landscapeSpec{
 		note:  "Many regular local basins expose why a single local run can need population restarts.",
 		lower: -5.12, upper: 5.12, initial: [2]float64{3.4, -3.1}, sigma: 1.25,
 		minima: [][2]float64{{0, 0}}, tolerance: 1e-10, objective: cmaes.Rastrigin,
+		basin: latticeBasin, basinName: "nearest integer basin",
 	},
 	{
 		key: "himmelblau", name: "Himmelblau",
@@ -86,9 +93,10 @@ var landscapes = []landscapeSpec{
 	},
 	{
 		key: "schaffer", name: "Expanded Schaffer F6",
-		note:  "Concentric rings, drawn on ±10 so the grid resolves them: the mean tunnels inward ring by ring and can stall on one ridge short of the center.",
-		lower: -10, upper: 10, initial: [2]float64{4, -4}, sigma: 2,
+		note:  "Concentric rings at radius kπ, drawn on ±10 so the grid resolves them. The ridge guarding the center stands at ≈1.96 while the whole reward for crossing it is 0.0195, so a single run stalls a ring out no matter how large σ or λ get — that is the expected outcome, not a defect. See the Restarts page for the strategy that does reach the center.",
+		lower: -10, upper: 10, initial: [2]float64{4, -4}, sigma: 4,
 		minima: [][2]float64{{0, 0}}, tolerance: 1e-10, objective: cmaes.ExpandedSchafferF6,
+		basin: ringBasin, basinName: "nearest ring",
 	},
 }
 
@@ -100,6 +108,27 @@ func lookupLandscape(key string) (landscapeSpec, bool) {
 	}
 
 	return landscapeSpec{}, false
+}
+
+// latticeBasin rounds to the integer lattice, where Rastrigin's local minima
+// sit.
+func latticeBasin(position []float64) [2]float64 {
+	return [2]float64{math.Round(position[0]), math.Round(position[1])}
+}
+
+// ringBasin projects onto the nearest Schaffer F6 ripple ring, whose minima lie
+// at radius kπ. The center ring collapses to the origin, so a winner inside the
+// innermost ridge is reported at the global optimum.
+func ringBasin(position []float64) [2]float64 {
+	radius := math.Hypot(position[0], position[1])
+	target := math.Pi * math.Round(radius/math.Pi)
+	if target == 0 || radius == 0 {
+		return [2]float64{0, 0}
+	}
+
+	scale := target / radius
+
+	return [2]float64{position[0] * scale, position[1] * scale}
 }
 
 func conditionedEllipsoid(position []float64) float64 {

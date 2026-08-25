@@ -14,7 +14,9 @@ compiled to `js/wasm`, with plain JavaScript and canvas as the display layer:
 - **`charts.html` — Telemetry.** Global and per-generation best cost, σ, and covariance
   condition number under one replay cursor.
 - **`restart.html` — Restart Map.** The public IPOP restart API doubles λ between runs,
-  with each Rastrigin winner and nearest basin marked.
+  on any of the landscapes above, with each run's winner and the local optimum it landed
+  in marked. It defaults to Schaffer F6, where a single run cannot reach the center at
+  any σ or λ but the restart schedule usually can.
 
 The organizing rule, inherited from the Mayfly and Dragonfly demos, is that **no
 optimization logic lives in JavaScript**. Go evaluates the landscapes and performs the
