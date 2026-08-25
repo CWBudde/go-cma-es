@@ -35,6 +35,10 @@ refuse to resume across it.
   deep-copy progress, population and distribution observers; structured logging;
   convergence, sigma and condition-number histories; and best-so-far cancellation
   results (Phase 5).
+- Active CMA with guarded negative rank-µ weights and Mahalanobis normalization, enabled
+  by default; separable CMA-ES with diagonal-only `O(n)` sampling and covariance updates,
+  the Ros-Hansen learning-rate correction, full/separable dispatch, and comparative
+  performance and objective tests (Phase 6).
 
 ### Fixed
 

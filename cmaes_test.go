@@ -281,16 +281,6 @@ func TestOptimizeContextValidationAndCancellation(t *testing.T) {
 		t.Fatalf("invalid run option returned (%v, %v), want (nil, error)", result, err)
 	}
 
-	separable := NewSeparableConfig(2)
-	separable.ObjectiveFunc = sphere
-	separable.LowerBound = -1
-	separable.UpperBound = 1
-
-	result, err = Optimize(separable)
-	if result != nil || err == nil {
-		t.Fatalf("separable mode returned (%v, %v), want (nil, not implemented error)", result, err)
-	}
-
 	constrained := optimizationConfig(2, 78, sphere)
 	constrained.Constraints = &ConstraintConfig{}
 	constrained.MaxIterations = 1

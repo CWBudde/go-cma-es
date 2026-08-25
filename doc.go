@@ -3,9 +3,12 @@
 //
 // CMA-ES differs from the swarm metaheuristics in the sibling Mayfly and
 // Dragonfly libraries in the one respect that matters on ill-conditioned
-// problems: it learns a metric. The sampling distribution is a full multivariate
-// normal whose covariance adapts toward the inverse Hessian, so a step that is
-// correct along one axis is not forced to be equally large along every other.
+// problems: it learns a metric. The default sampling distribution is a full
+// multivariate normal whose covariance adapts toward the inverse Hessian, so a
+// step that is correct along one axis is not forced to be equally large along
+// every other. Active covariance adaptation is enabled by default. Separable
+// mode learns coordinate scaling with linear time and storage when correlations
+// are unnecessary.
 // A swarm with an isotropic, externally scheduled step size needs O(cond)
 // evaluations on a conditioned ellipsoid where CMA-ES needs O(log cond).
 //
@@ -20,10 +23,10 @@
 //
 // # Status
 //
-// This package is under construction. The passive full-covariance strategy,
-// box-boundary handling, nonlinear constraints, convergence criteria, and
-// lifecycle observers are implemented; PLAN.md in the repository root is the
-// single source of truth for later variant work.
+// This package is under construction. Active full-covariance and separable
+// strategies, box-boundary handling, nonlinear constraints, convergence
+// criteria, and lifecycle observers are implemented; PLAN.md in the repository
+// root is the single source of truth for later variant work.
 //
 // # Conventions
 //

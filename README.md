@@ -6,9 +6,9 @@ Strategy** (CMA-ES), following Hansen's tutorial (arXiv:1604.00772).
 Third in a family with [Mayfly](https://github.com/cwbudde/mayfly) and
 [Dragonfly](https://github.com/CWBudde/dragonfly), and deliberately unlike both of them.
 
-> **Status: under construction.** Phase 5 provides passive, full-covariance CMA-ES with
-> box-boundary handling, nonlinear constraints, convergence criteria, and lifecycle
-> observers. Active CMA and covariance variants remain later phases.
+> **Status: under construction.** Phase 6 provides active full-covariance CMA-ES and
+> sep-CMA-ES, with box-boundary handling, nonlinear constraints, convergence criteria,
+> and lifecycle observers. Restarts and block-diagonal covariance remain later phases.
 > [`PLAN.md`](PLAN.md) is the source of truth for progress.
 
 ## Why
@@ -34,17 +34,17 @@ CMA-ES answers both halves of that:
   criteria read off the distribution's own state, end a converged run rather than
   spending the remaining budget at zero velocity.
 
-## Planned features
+## Features and roadmap
 
-| Feature                     | Purpose                                                          |
-| --------------------------- | ---------------------------------------------------------------- |
-| Full-covariance CMA-ES      | the standard strategy, `n` up to a few hundred                   |
-| Active CMA                  | negative rank-µ weights; the modern reference default            |
-| sep-CMA-ES                  | diagonal covariance, `O(n)` per sample, for large `n`            |
-| Block-diagonal CMA-ES       | one small block per parameter group; matches structured problems |
-| IPOP / BIPOP restarts       | population-doubling restart strategies for multimodal problems   |
-| Deterministic parallel eval | bit-identical to a serial run of the same seed                   |
-| WebAssembly demo            | watch the covariance ellipse align with the valley               |
+| Feature                     | Status  | Purpose                                                          |
+| --------------------------- | ------- | ---------------------------------------------------------------- |
+| Full-covariance CMA-ES      | ready   | the standard strategy, `n` up to a few hundred                   |
+| Active CMA                  | ready   | guarded negative rank-µ weights; the modern reference default    |
+| sep-CMA-ES                  | ready   | diagonal covariance, `O(n)` per sample, for large `n`            |
+| Block-diagonal CMA-ES       | planned | one small block per parameter group; matches structured problems |
+| IPOP / BIPOP restarts       | planned | population-doubling restart strategies for multimodal problems   |
+| Deterministic parallel eval | ready   | bit-identical to a serial run of the same seed                   |
+| WebAssembly demo            | planned | watch the covariance ellipse align with the valley               |
 
 ## Install
 
@@ -81,6 +81,17 @@ if err != nil {
 }
 fmt.Printf("best cost: %g\n", result.GlobalBest.Cost)
 ```
+
+Active covariance adaptation is enabled by default. It uses the worst-ranked samples to
+reduce variance in unproductive directions, with the published weight-mass and
+Mahalanobis-length guards that preserve positive-definiteness. Set `config.ActiveCMA =
+false` to reproduce the passive update.
+
+For high-dimensional problems whose important scaling is coordinate-aligned, use
+`NewSeparableConfig` (or set `CovarianceMode = CovarianceSeparable`). It retains only the
+covariance diagonal, requires no eigendecomposition, and takes `O(n)` time and storage
+per sample. It cannot learn rotated correlations; use full covariance when those matter.
+The reproducible n=200 benchmark is `BenchmarkCovarianceModesN200`.
 
 The default `BoundaryPenalty` method uses Hansen's smooth linear/quadratic transformation
 to evaluate every candidate inside the box while retaining its latent Gaussian step for

@@ -187,6 +187,8 @@ func TestOptimizeFindsBoundActiveOptimumForEveryBoundaryMethod(t *testing.T) {
 			config.InitialSigma = 0.8
 			config.MaxIterations = 500
 			config.BoundaryMethod = method
+			// This test isolates boundary repair from Phase 6's active update.
+			config.ActiveCMA = false
 
 			result, err := Optimize(config)
 			if err != nil {

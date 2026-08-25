@@ -281,10 +281,15 @@ func distributionSnapshot(
 	state *strategyState,
 	iteration, evaluations int,
 ) DistributionSnapshot {
+	eigenvectors := state.b
+	if state.mode == CovarianceSeparable {
+		eigenvectors = separableEigenvectors(len(state.m))
+	}
+
 	return DistributionSnapshot{
 		Mean:            append([]float64(nil), state.m...),
 		Eigenvalues:     append([]float64(nil), state.d...),
-		Eigenvectors:    clonePositions(state.b),
+		Eigenvectors:    clonePositions(eigenvectors),
 		Sigma:           state.sigma,
 		ConditionNumber: covarianceConditionNumber(state.d),
 		Iteration:       iteration,

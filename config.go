@@ -22,13 +22,14 @@ const (
 // parameters. They are deliberately derived in one place so later algorithm
 // phases cannot silently use a different formula.
 type strategyParameters struct {
-	weights []float64
-	muEff   float64
-	cSigma  float64
-	dSigma  float64
-	cc      float64
-	c1      float64
-	cmu     float64
+	weights         []float64
+	negativeWeights []float64
+	muEff           float64
+	cSigma          float64
+	dSigma          float64
+	cc              float64
+	c1              float64
+	cmu             float64
 }
 
 // NewDefaultConfig creates the default full-covariance CMA-ES configuration.
@@ -108,7 +109,7 @@ func defaultPopulationSize(problemSize int) int {
 func deriveStrategyParameters(config *Config) strategyParameters {
 	weights := make([]float64, config.Mu)
 	weightSum := 0.0
-	weightBase := math.Log(float64(config.Lambda+1) / 2)
+	weightBase := math.Log(math.Max(float64(config.Mu), float64(config.Lambda)/2) + 0.5)
 
 	for i := range weights {
 		weights[i] = weightBase - math.Log(float64(i+1))
@@ -128,16 +129,26 @@ func deriveStrategyParameters(config *Config) strategyParameters {
 	dSigma := 1 + cSigma + 2*math.Max(0, math.Sqrt((muEff-1)/(n+1))-1)
 	cc := (4 + muEff/n) / (n + 4 + 2*muEff/n)
 	c1 := 2 / ((n+1.3)*(n+1.3) + muEff)
+
 	cmu := math.Min(1-c1, 2*(muEff-2+1/muEff)/((n+2)*(n+2)+muEff))
+	if config.CovarianceMode == CovarianceSeparable {
+		cmu = math.Min(1-c1, cmu*(n+2)/3)
+	}
+
+	var negativeWeights []float64
+	if config.ActiveCMA {
+		negativeWeights = deriveNegativeWeights(config, weights, muEff, c1, cmu, weightBase)
+	}
 
 	return strategyParameters{
-		weights: weights,
-		muEff:   muEff,
-		cSigma:  cSigma,
-		dSigma:  dSigma,
-		cc:      cc,
-		c1:      c1,
-		cmu:     cmu,
+		weights:         weights,
+		negativeWeights: negativeWeights,
+		muEff:           muEff,
+		cSigma:          cSigma,
+		dSigma:          dSigma,
+		cc:              cc,
+		c1:              c1,
+		cmu:             cmu,
 	}
 }
 

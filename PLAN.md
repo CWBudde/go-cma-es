@@ -2,9 +2,9 @@
 
 Module: `github.com/CWBudde/go-cma-es`
 Package: `cmaes` (flat, at the repository root)
-Status: **Phase 5 complete.** Full-covariance CMA-ES, boundary handling, nonlinear
-constraints, convergence criteria, and lifecycle observers are implemented. Nothing is
-released.
+Status: **Phase 6 complete.** Full and separable CMA-ES, active covariance adaptation,
+boundary handling, nonlinear constraints, convergence criteria, and lifecycle observers
+are implemented. Nothing is released.
 
 This document is the roadmap and the single source of truth for progress. It is organised
 the same way as the sibling [Mayfly](https://github.com/cwbudde/mayfly) and
@@ -274,13 +274,13 @@ is why it is a first-class observer rather than a debug hook.
 
 ## Phase 6 — sep-CMA-ES and active CMA
 
-- [ ] `separable.go`: diagonal-only covariance, `O(n)` per sample, no eigendecomposition
-- [ ] `CovarianceMode` (`full`, `separable`) dispatch, with the Ros & Hansen learning-rate
+- [x] `separable.go`: diagonal-only covariance, `O(n)` per sample, no eigendecomposition
+- [x] `CovarianceMode` (`full`, `separable`) dispatch, with the Ros & Hansen learning-rate
       correction `c_µ ← c_µ · (n + 2)/3`
-- [ ] `active.go`: negative rank-µ weights with the published guards — correct weight sums,
+- [x] `active.go`: negative rank-µ weights with the published guards — correct weight sums,
       positive-definiteness preserved
-- [ ] `ActiveCMA` config field, defaulting **on**
-- [ ] Tests: sep-CMA beats full CMA per unit _time_ on a separable n = 200 problem; active
+- [x] `ActiveCMA` config field, defaulting **on**
+- [x] Tests: sep-CMA beats full CMA per unit _time_ on a separable n = 200 problem; active
       CMA is no worse than passive across sphere, ellipsoid and Rosenbrock
 
 **Rationale**: sep-CMA is the scalability escape hatch. A 2000-circle joint stage is
