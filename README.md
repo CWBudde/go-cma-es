@@ -6,7 +6,7 @@ Strategy** (CMA-ES), following Hansen's tutorial (arXiv:1604.00772).
 Third in a family with [Mayfly](https://github.com/cwbudde/mayfly) and
 [Dragonfly](https://github.com/CWBudde/dragonfly), and deliberately unlike both of them.
 
-> **Status: under construction.** Phases 0–9 and 12 provide active full-covariance,
+> **Status: under construction.** Phases 0–10, 12 and 13 provide active full-covariance,
 > separable, and block-diagonal CMA-ES, box-boundary handling, nonlinear constraints,
 > convergence criteria, lifecycle observers, IPOP/BIPOP restarts, and a WebAssembly
 > showcase.

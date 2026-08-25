@@ -2,7 +2,7 @@
 
 Module: `github.com/CWBudde/go-cma-es`
 Package: `cmaes` (flat, at the repository root)
-Status: **Phases 0–9, 12 and 13 complete.** Full, separable, and block-diagonal CMA-ES,
+Status: **Phases 0–10, 12 and 13 complete.** Full, separable, and block-diagonal CMA-ES,
 active covariance adaptation, boundary handling, nonlinear constraints, convergence
 criteria, lifecycle observers, IPOP/BIPOP restarts, the WebAssembly showcase, and the
 shared benchmark function suite are implemented. Nothing is released.
@@ -363,15 +363,15 @@ shipping both silently would be worse than shipping either.
 
 ## Phase 10 — Configuration, CLI, server, schedule
 
-- [ ] Add `cmaes` to the consumer's optimizer enum; refuse MayFly-only knobs (`variant`,
+- [x] Add `cmaes` to the consumer's optimizer enum; refuse MayFly-only knobs (`variant`,
       `qmcInit`, `NC`, `DanceDamp`) under it, as `dragonfly` already is
-- [ ] Add the CMA-ES knobs (`initialSigma`, `covarianceMode`, `activeCMA`,
+- [x] Add the CMA-ES knobs (`initialSigma`, `covarianceMode`, `activeCMA`,
       `restartStrategy`) with defaults and limits
-- [ ] `cmd/run --optimizer cmaes`; job payload; schedule document `base.optimizer`
-- [ ] Web UI engine selector; regenerate and commit the templ output
-- [ ] Polishing stays MayFly-only for now — state that explicitly in the consumer's
+- [x] `cmd/run --optimizer cmaes`; job payload; schedule document `base.optimizer`
+- [x] Web UI engine selector; regenerate and commit the templ output
+- [x] Polishing stays MayFly-only for now — state that explicitly in the consumer's
       behavior invariants
-- [ ] Update the consumer's support matrix, known limitations, and `AGENTS.md`
+- [x] Update the consumer's support matrix, known limitations, and `AGENTS.md`
 
 **Rationale**: The engine-selection plumbing already exists end to end for `dragonfly`.
 This phase follows an established path rather than building one, which is exactly why it
