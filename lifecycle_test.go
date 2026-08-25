@@ -143,8 +143,7 @@ func reconstructCovariance(eigenvectors [][]float64, axisScales []float64) [][]f
 		covariance[row] = make([]float64, size)
 		for column := range covariance[row] {
 			for axis, scale := range axisScales {
-				covariance[row][column] +=
-					eigenvectors[row][axis] * scale * scale * eigenvectors[column][axis]
+				covariance[row][column] += eigenvectors[row][axis] * scale * scale * eigenvectors[column][axis]
 			}
 		}
 	}

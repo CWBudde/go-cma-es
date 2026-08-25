@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="An IPOP-style population-doubling CMA-ES restart schedule on Rastrigin." />
+    <title>Restart Map · go-cma-es</title><link rel="icon" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&amp;family=Space+Grotesk:wght@400;500;600;700&amp;display=swap" rel="stylesheet" /><link rel="stylesheet" href="style.css" />
+  </head>
+  <body><main class="shell">
+    <header class="masthead"><a class="brand" href="index.html"><img src="favicon.svg" alt="" /><span>go-cma-es <b>lab</b></span></a><nav><a href="index.html">Covariance</a><a href="compare.html">Metric test</a><a href="charts.html">Telemetry</a><a href="restart.html" aria-current="page">Restarts</a><a href="https://github.com/CWBudde/go-cma-es">Source</a></nav></header>
+    <section class="hero"><div><p class="eyebrow">IPOP through the public restart API</p><h1>Double λ, restart elsewhere, mark the basin.</h1></div><p class="lede">Each numbered amber point is one run's best position on Rastrigin. The violet square is its nearest integer basin. Population size doubles from one restart to the next, buying broader coverage of a multimodal landscape.</p></section>
+    <p class="status" id="status" data-state="loading">Loading WebAssembly…</p>
+    <section class="toolbar">
+      <div class="field"><label for="seed">Base seed</label><input id="seed" type="number" value="42" /></div>
+      <div class="field"><label for="lambda">Initial λ</label><input id="lambda" type="number" min="4" max="12" value="6" /></div>
+      <div class="field"><label for="restarts">Runs</label><input id="restarts" type="number" min="2" max="6" value="5" /></div>
+      <div class="field"><label for="iterations">Generations / run</label><input id="iterations" type="number" min="10" max="100" value="55" /></div>
+      <div class="field"><label>Total evaluations</label><span class="readout" id="totalEvals">—</span></div>
+      <button class="primary" id="run">Run schedule</button>
+    </section>
+    <section class="instrument">
+      <div class="stage-panel"><div class="section-title"><h2>Restart winners</h2><small>Rastrigin · rank shaded</small></div><canvas id="restartStage" width="820" height="820"></canvas><ul class="legend"><li style="color: var(--mean)"><span class="key"></span>run winner</li><li style="color: var(--baseline)"><span class="key square"></span>nearest basin</li><li><span class="key square"></span>global optimum</li></ul></div>
+      <aside class="controls"><h3>Best across restarts</h3><p class="mono" id="globalBest">—</p><p class="note">This page calls <code>OptimizeWithRestarts</code> with the IPOP strategy and renders its <code>RestartResult</code> records directly.</p><p class="note">Each run receives a deterministic derived seed and a new mean. The generation cap keeps the browser example bounded; the table reports the actual stopping reason.</p></aside>
+    </section>
+    <div class="table-wrap" style="margin-top: 18px"><table><thead><tr><th>Run</th><th>λ</th><th>Iterations</th><th>Evaluations</th><th>Basin</th><th>Best cost</th><th>Stopped by</th></tr></thead><tbody id="restartRows"></tbody></table></div>
+    <section class="copy"><div><h2>Why population doubling</h2><p>A local CMA-ES run is intentionally good at exploiting one basin. IPOP turns that strength into a global strategy by restarting with increasingly large populations, raising the chance that a generation spans useful basins.</p></div><div><h2>Why the map is honest</h2><p>Rastrigin's local minima sit near the integer lattice. The line from a winner to its violet square makes the basin classification visible rather than reducing every restart to one final scalar.</p></div></section>
+    <footer><span id="buildInfo">—</span><span>public IPOP API · one shared evaluation budget</span></footer>
+  </main><script src="wasm_exec.js"></script><script src="boot.js"></script><script src="render.js"></script><script src="restart.js"></script></body>
+</html>

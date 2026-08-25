@@ -195,3 +195,46 @@ func BenchmarkCovarianceModesN200(b *testing.B) {
 		})
 	}
 }
+
+// TestSeparableCovarianceUpdateLearnsFromTheSampledStep repeats the
+// genotype/phenotype guard for the separable update, which maintains the
+// covariance diagonal through its own code path.
+func TestSeparableCovarianceUpdateLearnsFromTheSampledStep(t *testing.T) {
+	config := NewSeparableConfig(5)
+	parameters := deriveStrategyParameters(config)
+
+	if len(parameters.negativeWeights) == 0 {
+		t.Fatal("default separable configuration has no negative weights to guard")
+	}
+
+	steps := sampledSteps(config.Lambda, config.ProblemSize)
+
+	unrepaired := make([]candidate, config.Lambda)
+	for index, step := range steps {
+		unrepaired[index] = candidate{y: append([]float64(nil), step...), sampledY: step}
+	}
+
+	want := newStrategyState(config)
+	updateStrategyCovariance(want, unrepaired, true, parameters)
+
+	got := newStrategyState(config)
+	updateStrategyCovariance(got, adaptationStepFixture(steps), true, parameters)
+
+	assertVectorClose(t, got.diagonal, want.diagonal, 0)
+	assertVectorClose(t, got.d, want.d, 0)
+
+	folded := newStrategyState(config)
+
+	for index := range unrepaired {
+		for coordinate := range unrepaired[index].y {
+			unrepaired[index].y[coordinate] *= -0.1
+			unrepaired[index].sampledY = unrepaired[index].y
+		}
+	}
+
+	updateStrategyCovariance(folded, unrepaired, true, parameters)
+
+	if reflect.DeepEqual(folded.diagonal, want.diagonal) {
+		t.Fatal("folded steps produce the same diagonal; the test cannot fail")
+	}
+}

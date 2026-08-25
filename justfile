@@ -98,10 +98,6 @@ run-wasm-demo: build-wasm-demo
 check-wasm-demo:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [[ ! -d examples/wasm-demo ]]; then
-        echo "examples/wasm-demo does not exist yet (PLAN.md Phase 12) - skipping"
-        exit 0
-    fi
     cd examples/wasm-demo
     GOOS=js GOARCH=wasm go build -o /dev/null .
     go build -o /dev/null ./...
