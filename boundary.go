@@ -130,18 +130,19 @@ func transformBounded(value, lower, upper float64) float64 {
 }
 
 // shoulderMargins returns Hansen's al and au, the widths of the quadratic
-// shoulders inside the lower and the upper bound. cma.py uses
-// min((ub-lb)/2, (1+|b|)/20) for each bound: a fifth of a tenth of the bound's
-// own magnitude, offset so that a bound at the origin still gets a shoulder,
-// and never wider than half the box. The offset form is the usual
-// absolute-plus-relative tolerance idiom and is affine in |b|, which matters
-// here because a max(1, |b|) variant would put a kink at the arbitrary
-// magnitude |b| = 1 and make the shoulder width depend on the units the search
-// space happens to be expressed in.
+// shoulders inside the lower and the upper bound. This is cma.py's
+// min((ub-lb)/2, max(1, |b|)/20) for each bound: a twentieth of the bound's own
+// magnitude, floored so that a bound near the origin still gets a shoulder, and
+// never wider than half the box.
+//
+// cma.py carries a second form, margin_width1 = (1+|b|)/20, which is affine in
+// |b| and so avoids the kink this one has at |b| = 1. It is not the default
+// there and it is not used here; the point of this file is to reproduce the
+// reference implementation's trajectory, not to improve on it.
 func shoulderMargins(lower, upper float64) (float64, float64) {
 	halfWidth := (upper - lower) / 2
 
-	return min(halfWidth, (1+math.Abs(lower))/20), min(halfWidth, (1+math.Abs(upper))/20)
+	return min(halfWidth, max(1, math.Abs(lower))/20), min(halfWidth, max(1, math.Abs(upper))/20)
 }
 
 // recomputeStep rewrites the step that leads to the repaired position. It

@@ -71,9 +71,6 @@ the first release must carry a `Version` that postdates them.
   scaled by each coordinate's variance `σ²·C_ii`, adapted across generations, with the
   out-of-bounds-mean term. It replaces a single interquartile-range-scaled scalar whose
   degenerate fallback was a bare `1.0` in raw objective units.
-- The linear/quadratic shoulder margin is Hansen's `(1 + |b|)/20` rather than
-  `max(1, |b|)/20`. The two agree only for a bound at the origin; on `[-1, 1]` the
-  shoulder width goes from 0.05 to 0.10.
 - `TolX` is relative to the initial sigma, matching Hansen's `1e-12·σ⁽⁰⁾`, and the default
   moved from `1e-11` to `1e-12`. It was previously absolute, so a problem started at a
   small `InitialSigma` terminated on iteration 1.

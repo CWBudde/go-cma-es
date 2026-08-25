@@ -91,10 +91,14 @@ func TestBoundaryRepairsRespectPerCoordinateBounds(t *testing.T) {
 }
 
 // TestLinearQuadraticShoulderMargins pins Hansen's al and au. cma.py's
-// BoxConstraintsLinQuadTransformation uses min((ub-lb)/2, (1+|b|)/20) for each
-// bound separately, so the box [-1, 1] gets al = au = 2/20 = 0.1, the box
-// [0.1, 5] gets al = 1.1/20 = 0.055 and au = 6/20 = 0.3, and the narrow box
-// [-0.05, 0.05] is capped at half its width because 1.05/20 exceeds it.
+// BoxConstraintsLinQuadTransformation uses min((ub-lb)/2, max(1, |b|)/20) for
+// each bound separately, so the box [-1, 1] gets al = au = 1/20 = 0.05, the box
+// [0.1, 5] gets al = 1/20 = 0.05 from the floor and au = 5/20 = 0.25 from the
+// magnitude, and the narrow box [-0.02, 0.02] is capped at half its width
+// because the floor alone already exceeds it.
+//
+// The asymmetric box is also what separates this from cma.py's non-default
+// margin_width1 = (1+|b|)/20, which would give 0.055 and 0.3 instead.
 func TestLinearQuadraticShoulderMargins(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -103,10 +107,10 @@ func TestLinearQuadraticShoulderMargins(t *testing.T) {
 		wantLower float64
 		wantUpper float64
 	}{
-		{name: "symmetric unit box", lower: -1, upper: 1, wantLower: 0.1, wantUpper: 0.1},
-		{name: "asymmetric box", lower: 0.1, upper: 5, wantLower: 0.055, wantUpper: 0.3},
-		{name: "half width caps", lower: -0.05, upper: 0.05, wantLower: 0.05, wantUpper: 0.05},
-		{name: "bound at origin", lower: 0, upper: 20, wantLower: 0.05, wantUpper: 1.05},
+		{name: "symmetric unit box", lower: -1, upper: 1, wantLower: 0.05, wantUpper: 0.05},
+		{name: "asymmetric box", lower: 0.1, upper: 5, wantLower: 0.05, wantUpper: 0.25},
+		{name: "half width caps", lower: -0.02, upper: 0.02, wantLower: 0.02, wantUpper: 0.02},
+		{name: "bound at origin", lower: 0, upper: 20, wantLower: 0.05, wantUpper: 1},
 	}
 
 	for _, test := range tests {
@@ -123,12 +127,12 @@ func TestLinearQuadraticShoulderMargins(t *testing.T) {
 }
 
 // TestHansenLinearQuadraticTransformation checks the transformation on the box
-// [-1, 1], where Hansen's margins are al = au = (1 + 1)/20 = 0.1. The quadratic
+// [-1, 1], where Hansen's margins are al = au = max(1, 1)/20 = 0.05. The quadratic
 // shoulder is x -> lb + (x - (lb - al))^2 / (4 al), so the bound itself maps to
 // lb + al^2/(4 al) = lb + al/4, and lb - al maps exactly to lb. The upper side
 // is the mirror image.
 func TestHansenLinearQuadraticTransformation(t *testing.T) {
-	const margin = 0.1
+	const margin = 0.05
 
 	tests := []struct {
 		name      string
@@ -162,20 +166,21 @@ func TestHansenLinearQuadraticTransformation(t *testing.T) {
 }
 
 // TestTransformBoundedIsPerCoordinate checks the asymmetric box [0.1, 5], where
-// al = 0.055 and au = 0.3. The lower bound maps to 0.1 + al/4 = 0.11375 and the
-// upper bound to 5 - au/4 = 4.925; a coordinate handled with a shared scalar
-// margin could not produce both.
+// al = 0.05 comes from the floor and au = 0.25 from the bound's magnitude. The
+// lower bound maps to 0.1 + al/4 = 0.1125 and the upper bound to 5 - au/4 =
+// 4.9375; a coordinate handled with a shared scalar margin could not produce
+// both.
 func TestTransformBoundedIsPerCoordinate(t *testing.T) {
 	tests := []struct {
 		name      string
 		value     float64
 		wantValue float64
 	}{
-		{name: "lower bound", value: 0.1, wantValue: 0.1 + 0.055/4},
-		{name: "lower shoulder start", value: 0.1 - 0.055, wantValue: 0.1},
+		{name: "lower bound", value: 0.1, wantValue: 0.1 + 0.05/4},
+		{name: "lower shoulder start", value: 0.1 - 0.05, wantValue: 0.1},
 		{name: "interior", value: 2.5, wantValue: 2.5},
-		{name: "upper bound", value: 5, wantValue: 5 - 0.3/4},
-		{name: "upper shoulder start", value: 5 + 0.3, wantValue: 5},
+		{name: "upper bound", value: 5, wantValue: 5 - 0.25/4},
+		{name: "upper shoulder start", value: 5 + 0.25, wantValue: 5},
 	}
 
 	for _, test := range tests {
@@ -197,21 +202,21 @@ func TestTransformBoundedIsPerCoordinate(t *testing.T) {
 }
 
 // TestPenaltyBoundaryUsesPerCoordinateBounds pushes one candidate past the
-// upper bound of the narrow third coordinate only, where au = 0.3. Its value
-// 5.6 is ub + 2 au, one shoulder width past the end of the shoulder, so the
-// recorded squared deviation is 0.3^2 = 0.09. The transformation reflects it to
-// 5.3 - 0.3 = 5.0 and the shoulder then maps that to 5 - 0.3/4 = 4.925. Under a
-// shared scalar box of [-10, 10] the same value would be interior.
+// upper bound of the narrow third coordinate only, where au = 0.25. Its value
+// 5.5 is ub + 2 au, one shoulder width past the end of the shoulder, so the
+// recorded squared deviation is 0.25^2 = 0.0625. The transformation reflects it
+// to 5.25 - 0.25 = 5.0 and the shoulder then maps that to 5 - 0.25/4 = 4.9375.
+// Under a shared scalar box of [-10, 10] the same value would be interior.
 func TestPenaltyBoundaryUsesPerCoordinateBounds(t *testing.T) {
 	state := &strategyState{m: []float64{0, 0, 2}, sigma: 1}
-	population := []candidate{{x: []float64{1, -2, 5.6}, y: make([]float64, 3)}}
+	population := []candidate{{x: []float64{1, -2, 5.5}, y: make([]float64, 3)}}
 
 	applyBoundaryHandling(population, state, nonUniformConfig(BoundaryPenalty))
 
-	assertVectorClose(t, population[0].evaluatedPosition(), []float64{1, -2, 4.925}, 1e-15)
+	assertVectorClose(t, population[0].evaluatedPosition(), []float64{1, -2, 4.9375}, 1e-15)
 
-	if math.Abs(population[0].boundaryDistance-0.09) > 1e-15 {
-		t.Errorf("boundaryDistance = %v, want 0.09", population[0].boundaryDistance)
+	if math.Abs(population[0].boundaryDistance-0.0625) > 1e-15 {
+		t.Errorf("boundaryDistance = %v, want 0.0625", population[0].boundaryDistance)
 	}
 }
 
@@ -248,11 +253,11 @@ func TestPenaltyBoundaryLeavesInteriorStepsUntouched(t *testing.T) {
 
 // penaltyFixture builds a two-dimensional generation on the box [-1, 1] with an
 // identity covariance and unit step size, so that sigma^2 C_ii = 1 in both
-// coordinates. Hansen's shoulder width here is al = au = 0.1, so the penalty is
-// measured from the interval [-1.1, 1.1]. The mean sits at 1.2, one shoulder
-// width past its end, which is what lets the weights initialize at all. Exactly
-// one candidate is out there too, also at 1.2, giving it a deviation of 0.1 in
-// its first coordinate and none elsewhere.
+// coordinates. Hansen's shoulder width here is al = au = 0.05, so the penalty
+// is measured from the interval [-1.05, 1.05]. The mean sits at 1.1, one
+// shoulder width past its end, which is what lets the weights initialize at
+// all. Exactly one candidate is out there too, also at 1.1, giving it a
+// deviation of 0.05 in its first coordinate and none elsewhere.
 func penaltyFixture(costScale float64) (*Config, *strategyState, []candidate) {
 	config := &Config{
 		BoundaryMethod: BoundaryPenalty,
@@ -263,13 +268,13 @@ func penaltyFixture(costScale float64) (*Config, *strategyState, []candidate) {
 		Mu:             3,
 	}
 	state := &strategyState{
-		m:     []float64{1.2, 0},
+		m:     []float64{1.1, 0},
 		c:     identityMatrix(2),
 		d:     []float64{1, 1},
 		b:     identityMatrix(2),
 		sigma: 1,
 	}
-	positions := [][]float64{{1.2, 0}, {0.5, 0}, {0, 0.25}, {-0.5, 0}}
+	positions := [][]float64{{1.1, 0}, {0.5, 0}, {0, 0.25}, {-0.5, 0}}
 	costs := []float64{1, 2, 5, 9}
 
 	population := make([]candidate, len(positions))
@@ -291,8 +296,8 @@ func penaltyFixture(costScale float64) (*Config, *strategyState, []candidate) {
 // indices (4+1)/4 = 1 and 3(4+1)/4 = 3, an interquartile range of 9 - 2 = 7.
 // Both coordinate variances are sigma^2 C_ii = 1, so the normalized spread is
 // also 7 and each weight is seeded at gamma = 2 * 7 = 14. The out-of-bounds
-// candidate deviates by 0.1 in one of two coordinates, so its penalty is
-// 14 * 0.1^2 / 2 = 0.07.
+// candidate deviates by 0.05 in one of two coordinates, so its penalty is
+// 14 * 0.05^2 / 2 = 0.0175.
 func TestBoundaryPenaltySeedsWeightsFromNormalizedFitnessSpread(t *testing.T) {
 	config, state, population := penaltyFixture(1)
 	penalty := newBoundaryPenaltyState(config)
@@ -301,8 +306,8 @@ func TestBoundaryPenaltySeedsWeightsFromNormalizedFitnessSpread(t *testing.T) {
 
 	assertVectorClose(t, penalty.gamma, []float64{14, 14}, 1e-12)
 
-	if math.Abs(population[0].boundaryPenalty-0.07) > 1e-12 {
-		t.Errorf("out-of-bounds penalty = %v, want 0.07", population[0].boundaryPenalty)
+	if math.Abs(population[0].boundaryPenalty-0.0175) > 1e-12 {
+		t.Errorf("out-of-bounds penalty = %v, want 0.0175", population[0].boundaryPenalty)
 	}
 
 	for index := 1; index < len(population); index++ {
