@@ -101,26 +101,20 @@ func validateWithoutObjective(config *Config) error {
 		probe.ObjectiveFunc = placeholderObjective
 	}
 
-	// Constraint callbacks are as unserializable as ObjectiveFunc, so the file
-	// itself cannot carry them and LoadConfig must not demand them. The probe
-	// stands one in, on a copy so the loaded config keeps its empty constraint
-	// set: the caller's own Validate then fails loudly until they reattach.
-	if probe.Constraints != nil {
-		constraints := *probe.Constraints
-		if len(constraints.Inequalities) == 0 && len(constraints.Equalities) == 0 {
-			constraints.Inequalities = []ConstraintFunction{placeholderConstraint}
-		}
-
-		probe.Constraints = &constraints
+	// Constraint callbacks are as unserializable as ObjectiveFunc, so a saved
+	// file can never carry them and refusing to load one would make every
+	// constrained configuration unloadable. Loading is therefore allowed while
+	// the configuration stays invalid to run: no placeholder is substituted, the
+	// slices stay empty, and the caller's own Validate fails with this same
+	// sentinel until real functions are reattached.
+	err := probe.Validate()
+	if err != nil && !errors.Is(err, errConstraintFunctionsMissing) {
+		return err
 	}
 
-	return probe.Validate()
+	return nil
 }
 
 func placeholderObjective(_ []float64) float64 {
-	return 0
-}
-
-func placeholderConstraint(_ []float64) float64 {
 	return 0
 }

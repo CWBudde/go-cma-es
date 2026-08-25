@@ -50,10 +50,10 @@ type PopulationObserver func(PopulationSnapshot)
 //
 // All five distribution fields describe the same iteration: B and D are
 // decomposed from the covariance that Mean and Sigma were updated with, not
-// from the strategy's lazily refreshed eigensystem, so the ellipse
-// m + sigma*B*D*S(1) is the one this iteration actually ended with.
-// Registering a DistributionObserver is what pays for that decomposition, one
-// per completed iteration.
+// from the strategy's lazily refreshed eigensystem, so the ellipse this
+// snapshot describes is the one the iteration actually ended with. The same
+// eigensystem produces ConditionNumber and the matching entry of
+// Result.ConditionNumberHistory.
 type DistributionSnapshot struct {
 	Mean            []float64
 	Eigenvalues     []float64
@@ -65,8 +65,6 @@ type DistributionSnapshot struct {
 }
 
 // DistributionObserver receives an opt-in deep copy of each distribution.
-// Registering one costs an extra eigendecomposition per iteration; see
-// DistributionSnapshot.
 //
 // A panic raised by the observer is recovered and reported through the
 // registered Logger; it never aborts the run.
@@ -275,6 +273,7 @@ func notifyLifecycle(
 			Iteration:       iteration,
 			EvaluationCount: evaluations,
 		}
+
 		notifyContained(ctx, options.logger, "progress_observer", func() {
 			options.observer(progress)
 		})
@@ -282,6 +281,7 @@ func notifyLifecycle(
 
 	if options.populationObserver != nil {
 		snapshot := populationSnapshot(best, population, iteration, evaluations)
+
 		notifyContained(ctx, options.logger, "population_observer", func() {
 			options.populationObserver(snapshot)
 		})
@@ -289,6 +289,7 @@ func notifyLifecycle(
 
 	if options.distributionObserver != nil {
 		snapshot := distributionSnapshot(state, iteration, evaluations)
+
 		notifyContained(ctx, options.logger, "distribution_observer", func() {
 			options.distributionObserver(snapshot)
 		})

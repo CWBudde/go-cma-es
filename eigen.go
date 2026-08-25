@@ -14,19 +14,20 @@ const (
 	// genuinely pathological input. Reaching it is reported rather than
 	// silently accepted; see symmetricEigendecomposition.
 	maxJacobiSweeps = 60
-	// eigenvalueFloorRatio is the smallest eigenvalue an axis may keep,
+	// eigenvalueRepairRatio positions an eigenvalue that has to be repaired,
 	// relative to the largest eigenvalue of the same matrix. Roundoff, and the
 	// negative rank-mu weights of active CMA, can drive an eigenvalue to zero
 	// or below. Flooring such an eigenvalue to exactly zero gives its axis a
 	// step size of exactly zero, so B*diag(D)*z never moves along it again and
 	// the dimension is dead for the rest of the run; conditionNumber also turns
-	// infinite and trips the condition_number criterion immediately. Flooring
-	// to a small positive multiple of the largest eigenvalue instead — as
-	// Hansen's cma.py does — keeps the axis alive and caps the spectral
-	// condition number at 1/eigenvalueFloorRatio = 1e13, a decade below the
-	// default ConditionCov of 1e14, so a clamp on its own can never terminate
-	// a run.
-	eigenvalueFloorRatio = 1e-13
+	// infinite and trips the condition_number criterion immediately. Hansen's
+	// cma.py instead nudges the spectrum just positive, and only when an
+	// eigenvalue is actually non-positive, so a merely small positive
+	// eigenvalue keeps its value and a genuinely ill-conditioned covariance
+	// keeps its condition number. 1e-13 is about a thousand times the roundoff
+	// level of the largest eigenvalue, so the repaired axis is well above
+	// noise while contributing a negligible step.
+	eigenvalueRepairRatio = 1e-13
 )
 
 // symmetricEigendecomposition computes the eigenvalues and eigenvectors of a
@@ -35,8 +36,8 @@ const (
 //
 // The input is not modified. Roundoff can make a covariance matrix slightly
 // asymmetric or give it a non-positive eigenvalue, so the working copy is
-// explicitly symmetrized and the spectrum is floored to a small positive
-// multiple of its largest eigenvalue before callers form their square roots.
+// explicitly symmetrized and any non-positive eigenvalue is repaired to a
+// small positive value before callers form their square roots.
 //
 // The function panics when the sweeps fail to converge within maxJacobiSweeps.
 // That keeps the signature callers depend on while making a pathological input
@@ -93,24 +94,34 @@ func symmetricEigendecompositionWithStatus(
 	}
 
 	sortEigenpairs(values, vectors)
-	floorEigenvalues(values)
+	repairEigenvalues(values)
 
 	return values, vectors, converged
 }
 
-// floorEigenvalues raises every entry of an ascending spectrum to at least
-// eigenvalueFloorRatio times the largest eigenvalue. The order is preserved
-// because the floor is a constant. A matrix without a single positive
-// eigenvalue carries no scale to be relative to, so its spectrum is replaced
-// by the unit spectrum: sampling stays isotropic and the run can recover,
-// which an all-zero spectrum would not allow.
-func floorEigenvalues(values []float64) {
+// repairEigenvalues replaces every non-positive entry of an ascending spectrum
+// with a small positive value, leaving positive eigenvalues exactly as
+// computed: a covariance that is genuinely ill-conditioned but positive
+// definite must keep its condition number so that the condition_number
+// criterion can still see it. The replacement is the smaller of
+// eigenvalueRepairRatio times the largest eigenvalue and the smallest
+// genuinely positive eigenvalue, which keeps the spectrum ascending and never
+// invents an axis longer than one the matrix actually has.
+//
+// A matrix without a single finite positive eigenvalue carries no scale to be
+// relative to, so its spectrum is replaced by the unit spectrum: sampling
+// stays isotropic and the run can recover, which an all-zero spectrum would
+// not allow.
+func repairEigenvalues(values []float64) {
 	if len(values) == 0 {
 		return
 	}
 
 	lambdaMax := values[len(values)-1]
-	if !(lambdaMax > 0) {
+
+	// Negated so that a NaN, which compares false against everything, takes
+	// the fallback as well.
+	if !(lambdaMax > 0) || math.IsInf(lambdaMax, 1) {
 		for index := range values {
 			values[index] = 1
 		}
@@ -118,12 +129,19 @@ func floorEigenvalues(values []float64) {
 		return
 	}
 
-	floor := eigenvalueFloorRatio * lambdaMax
+	repaired := eigenvalueRepairRatio * lambdaMax
+
+	for _, value := range values {
+		if value > 0 {
+			repaired = math.Min(repaired, value)
+
+			break
+		}
+	}
+
 	for index, value := range values {
-		// Negated so that a NaN, which compares false against everything, is
-		// floored rather than passed through.
-		if !(value > floor) {
-			values[index] = floor
+		if !(value > 0) {
+			values[index] = repaired
 		}
 	}
 }

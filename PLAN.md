@@ -261,7 +261,9 @@ bound is exactly how a CMA-ES run reports a healthy σ while going nowhere.
 - [x] `DistributionSnapshot` + `WithDistributionObserver`: mean, σ, eigenvalues `D`,
       eigenvectors `B`, condition number, per iteration, as deep copies and opt-in
 - [x] `monitoring.go`: `ConvergenceCurve`, plus σ and condition-number history
-- [x] Context cancellation returns the best-so-far with a cancelled termination reason
+- [x] Cancellation after at least one evaluation returns the best-so-far with a cancelled
+      termination reason; a context already cancelled on entry returns an error, because
+      nothing has been computed yet
 - [x] Tests: every criterion fires on a constructed case and reports its own reason
 
 **Rationale**: The consuming project's reports were only possible because runs were

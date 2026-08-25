@@ -498,7 +498,7 @@ func TestNonContextEvaluationErrorAbortsTheRun(t *testing.T) {
 	}
 }
 
-func TestGenerationBestCurveRecordsOscillation(t *testing.T) {
+func TestIterationBestHistoryRecordsOscillation(t *testing.T) {
 	rastrigin := func(position []float64) float64 {
 		cost := 10 * float64(len(position))
 		for _, value := range position {
@@ -512,36 +512,39 @@ func TestGenerationBestCurveRecordsOscillation(t *testing.T) {
 	config.Convergence = nil
 	config.MaxIterations = 60
 
-	run := newOptimizationRun(config, runOptions{})
-
-	err := run.execute(context.Background(), rand.New(rand.NewSource(105)))
+	result, err := Optimize(config)
 	if err != nil {
-		t.Fatalf("execute: %v", err)
+		t.Fatalf("Optimize: %v", err)
 	}
 
-	if len(run.generationCurve) != run.iterations || len(run.curve) != run.iterations {
-		t.Fatalf("curve lengths = (%d generation, %d global), want %d",
-			len(run.generationCurve), len(run.curve), run.iterations)
+	if len(result.IterationBestHistory) != result.IterationCount {
+		t.Fatalf("IterationBestHistory has %d entries, want one per completed iteration (%d)",
+			len(result.IterationBestHistory), result.IterationCount)
 	}
 
 	runningBest := math.Inf(1)
 	oscillated := false
 
-	for index, generationBest := range run.generationCurve {
-		runningBest = math.Min(runningBest, generationBest)
+	for index, iterationBest := range result.IterationBestHistory {
+		runningBest = math.Min(runningBest, iterationBest)
 
-		if run.curve[index] != runningBest {
-			t.Fatalf("global curve[%d] = %v, want the running best %v of the generation curve",
-				index, run.curve[index], runningBest)
+		if result.ConvergenceCurve[index] != runningBest {
+			t.Fatalf("ConvergenceCurve[%d] = %v, want the running best %v of IterationBestHistory",
+				index, result.ConvergenceCurve[index], runningBest)
 		}
 
-		if index > 0 && generationBest > run.generationCurve[index-1] {
+		if index > 0 && iterationBest > result.IterationBestHistory[index-1] {
 			oscillated = true
 		}
 	}
 
+	if result.GlobalBest.Cost != runningBest {
+		t.Errorf("GlobalBest.Cost = %v, want the minimum %v of IterationBestHistory",
+			result.GlobalBest.Cost, runningBest)
+	}
+
 	if !oscillated {
-		t.Error("generation curve never rises, so it cannot show fitness oscillation")
+		t.Error("IterationBestHistory never rises, so it cannot show fitness oscillation")
 	}
 }
 

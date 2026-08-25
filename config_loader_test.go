@@ -336,25 +336,27 @@ func TestPlaceholderObjective(t *testing.T) {
 	}
 }
 
-func TestPlaceholderConstraint(t *testing.T) {
-	// Zero is a satisfied inequality, so the stand-in never changes a ranking
-	// even if it were to escape validateWithoutObjective's probe copy.
-	if got := placeholderConstraint([]float64{1, 2}); got != 0 {
-		t.Errorf("placeholderConstraint() = %v, want 0", got)
-	}
-}
-
-func TestValidateWithoutObjectiveDoesNotMutateConstraints(t *testing.T) {
+func TestValidateWithoutObjectiveToleratesOnlyUnrestorableCallbacks(t *testing.T) {
 	config := loaderTestConfig()
 	config.Constraints.Inequalities = nil
 	config.Constraints.Equalities = nil
 
 	err := validateWithoutObjective(config)
 	if err != nil {
-		t.Fatalf("validateWithoutObjective() = %v, want nil", err)
+		t.Fatalf("validateWithoutObjective() = %v, want nil for detached callbacks", err)
 	}
 
-	if config.Constraints.Inequalities != nil {
-		t.Errorf("probe leaked a placeholder into the config: %v", config.Constraints.Inequalities)
+	// No placeholder may be substituted: a loaded config must stay visibly
+	// unconstrained rather than look constrained while running unconstrained.
+	if config.Constraints.Inequalities != nil || config.Constraints.Equalities != nil {
+		t.Errorf("validateWithoutObjective attached stand-in callbacks: %v, %v",
+			config.Constraints.Inequalities, config.Constraints.Equalities)
+	}
+
+	config.Constraints.PenaltyFactor = -1
+
+	err = validateWithoutObjective(config)
+	if err == nil || !strings.Contains(err.Error(), "penalty_factor") {
+		t.Fatalf("validateWithoutObjective() = %v, want a penalty_factor error", err)
 	}
 }

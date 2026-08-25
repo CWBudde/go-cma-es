@@ -20,6 +20,15 @@ const (
 	fastConvergenceIterations = 300
 )
 
+// errConstraintFunctionsMissing reports a ConstraintConfig that is configured
+// but carries no callbacks, which is what a JSON round trip leaves behind. It
+// is a sentinel because LoadConfig tolerates exactly this one condition: the
+// callbacks cannot be serialized, so a loaded configuration is invalid to run
+// until the caller reattaches them, and Validate says so.
+var errConstraintFunctionsMissing = errors.New(
+	"constraint handling is configured but no constraint functions are set; " +
+		"they are not restored by LoadConfig and must be reattached")
+
 // strategyParameters are Hansen's dimension- and population-dependent
 // parameters. They are deliberately derived in one place so later algorithm
 // phases cannot silently use a different formula.
@@ -36,7 +45,9 @@ type strategyParameters struct {
 
 // NewDefaultConfig creates the default full-covariance CMA-ES configuration.
 // The initial mean is the origin and the initial step size is 0.3. Callers must
-// set ObjectiveFunc, LowerBound, and UpperBound before validating or optimizing.
+// set ObjectiveFunc and the search box - either the LowerBound and UpperBound
+// scalars or the per-dimension LowerBounds and UpperBounds slices - before
+// validating or optimizing.
 func NewDefaultConfig(problemSize int) *Config {
 	lambda := defaultPopulationSize(problemSize)
 	mu := lambda / 2
@@ -113,13 +124,14 @@ func deriveStrategyParameters(config *Config) strategyParameters {
 	weightSum := 0.0
 
 	// weightBase is the offset of the log-decreasing recombination weights
-	// w'_i = weightBase - ln(i). It is a hybrid of two published forms:
-	// Hansen's tutorial (arXiv:1604.00772, eq. 49) uses ln((lambda+1)/2), while
+	// w'_i = weightBase - ln(i). It is a hybrid of two published forms: Hansen's
+	// tutorial (arXiv:1604.00772, Table 1) uses ln((lambda + 1)/2), while
 	// purecmaes.m uses ln(mu + 1/2). They agree at the default mu = lambda/2.
-	// Taking the larger of mu and lambda/2 keeps the tutorial form for the
-	// default and switches to the purecmaes form once the caller raises Mu
-	// above lambda/2, where the tutorial form would make the trailing weights
-	// negative before normalisation and flip the sign of the whole vector.
+	// Taking the larger of mu and lambda/2 keeps the tutorial form for that
+	// default and switches to the purecmaes form once a caller raises Mu above
+	// lambda/2, where the tutorial form would drive the trailing raw weights
+	// negative and leave recombination with something other than a probability
+	// vector.
 	weightBase := math.Log(math.Max(float64(config.Mu), float64(config.Lambda)/2) + 0.5)
 
 	for i := range weights {
@@ -243,6 +255,8 @@ func (config *Config) Validate() error {
 // LowerBound whenever LowerBounds covers that coordinate, and likewise for the
 // upper side. An index outside a configured slice falls back to the scalar, so
 // the helper is safe to call before Validate has checked the slice lengths.
+//
+//nolint:nonamedreturns // Two same-typed results: the names say which is which.
 func coordinateBounds(config *Config, coordinate int) (lower, upper float64) {
 	lower = config.LowerBound
 	if coordinate >= 0 && coordinate < len(config.LowerBounds) {
@@ -456,8 +470,7 @@ func validateConstraintConfig(config *ConstraintConfig) error {
 	// silent loss into the same loud failure a missing ObjectiveFunc produces.
 	// A wholly zero ConstraintConfig carries no intent and stays legal.
 	if len(config.Inequalities) == 0 && len(config.Equalities) == 0 && !isZeroConstraintConfig(config) {
-		return errors.New("constraint handling is configured but no constraint functions are set; " +
-			"they are not restored by LoadConfig and must be reattached")
+		return errConstraintFunctionsMissing
 	}
 
 	return nil

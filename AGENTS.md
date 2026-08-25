@@ -76,12 +76,13 @@ corresponding phase is complete.
 | `version.go`     | `Version`, for a consumer's checkpoint/resume guard             |
 | `types.go`       | `Config`, `Result`, `Best`, `TerminationReason`                 |
 | `config.go`      | `NewDefaultConfig` and preset factories, Hansen's parameter set |
+| `config_loader.go` | versioned JSON persistence for `Config`                       |
 | `eigen.go`       | cyclic Jacobi eigendecomposition for real symmetric matrices    |
 | `matrix.go`      | dense matrix helpers used by covariance adaptation              |
 | `cmaes.go`       | the strategy itself: sampling, recombination, CSA, C update     |
 | `boundary.go`    | box handling; `constraints.go` for Deb rules and penalties      |
 | `convergence.go` | the stopping criteria; `lifecycle.go` for observers and options |
-| `monitoring.go`  | convergence histories and structured lifecycle logging          |
+| `monitoring.go`  | structured lifecycle logging only; the histories live on `Result` |
 | `separable.go`   | sep-CMA-ES; `active.go` for negative rank-µ weights             |
 | `blockdiag.go`   | block-diagonal covariance                                       |
 | `restart.go`     | IPOP and BIPOP                                                  |
@@ -101,8 +102,17 @@ the paper's symbol over a descriptive rename, and put the expansion in the doc c
 pointers and interfaces, then strings, then float64, then int, then bool.
 
 Every stochastic helper takes `rng *rand.Rand` as its **last** parameter. `Config.Rand`
-is the injection point; when it is nil, `OptimizeContext` creates a generator, writes it
-back to the config, and records the seed in `Result.Seed`.
+is the injection point; when it is nil, `OptimizeContext` creates a **run-local**
+generator, never writes to `Config`, and records the seed in `Result.Seed` /
+`Result.SeedKnown`.
+
+`Config` is treated as read-only for the duration of a run. That is what makes the same
+configuration safe to optimize twice, which Phase 7's `OptimizeWithRestarts` and the
+Phase 9 consumer adapter both depend on.
+
+`omitempty` goes on pointer fields only, where nil means "unset" and is meaningfully
+distinct from the zero value. Value fields are always written, so a saved configuration
+records every setting explicitly.
 
 ## Tests
 

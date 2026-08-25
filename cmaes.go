@@ -16,12 +16,18 @@ import (
 // and b, with eigenvectors in the columns of b. Separable covariance leaves
 // both dense matrices nil and stores only the covariance diagonal.
 type strategyState struct {
-	mode      CovarianceMode
-	m         []float64
-	psigma    []float64
-	pc        []float64
-	c         [][]float64
-	b         [][]float64
+	mode   CovarianceMode
+	m      []float64
+	psigma []float64
+	pc     []float64
+	c      [][]float64
+	b      [][]float64
+	// pendingB and pendingD hold the decomposition of c as it stands after the
+	// most recently completed iteration. Reporting needs it eagerly, and c does
+	// not change again before the next generation samples, so the lazy refresh
+	// consumes it instead of repeating the work.
+	pendingB  [][]float64
+	pendingD  []float64
 	diagonal  []float64
 	d         []float64
 	sigma     float64
@@ -45,19 +51,19 @@ type candidate struct {
 }
 
 type optimizationRun struct {
-	config           *Config
-	state            *strategyState
-	tracker          *convergenceTracker
-	reason           TerminationReason
-	curve            []float64
-	generationCurve  []float64
-	sigmaHistory     []float64
-	conditionHistory []float64
-	options          runOptions
-	best             Best
-	parameters       strategyParameters
-	evaluations      int
-	iterations       int
+	config             *Config
+	state              *strategyState
+	tracker            *convergenceTracker
+	reason             TerminationReason
+	curve              []float64
+	iterationBestCurve []float64
+	sigmaHistory       []float64
+	conditionHistory   []float64
+	options            runOptions
+	best               Best
+	parameters         strategyParameters
+	evaluations        int
+	iterations         int
 }
 
 // Optimize runs CMA-ES with a background context.
@@ -126,14 +132,14 @@ func newOptimizationRun(config *Config, options runOptions) *optimizationRun {
 		state:  state,
 		tracker: newConvergenceTracker(config.Convergence, config.Constraints,
 			state.sigma, config.ProblemSize, config.Lambda),
-		curve:            make([]float64, 0, config.MaxIterations),
-		generationCurve:  make([]float64, 0, config.MaxIterations),
-		sigmaHistory:     make([]float64, 0, config.MaxIterations),
-		conditionHistory: make([]float64, 0, config.MaxIterations),
-		best:             Best{Cost: math.Inf(1), ConstraintViolation: math.Inf(1)},
-		options:          options,
-		parameters:       deriveStrategyParameters(config),
-		reason:           TerminationMaxIterations,
+		curve:              make([]float64, 0, config.MaxIterations),
+		iterationBestCurve: make([]float64, 0, config.MaxIterations),
+		sigmaHistory:       make([]float64, 0, config.MaxIterations),
+		conditionHistory:   make([]float64, 0, config.MaxIterations),
+		best:               Best{Cost: math.Inf(1), ConstraintViolation: math.Inf(1)},
+		options:            options,
+		parameters:         deriveStrategyParameters(config),
+		reason:             TerminationMaxIterations,
 	}
 }
 
@@ -228,7 +234,7 @@ func (run *optimizationRun) completeGeneration(
 	generation int,
 	population []candidate,
 ) {
-	generationBest := generationBestCost(population, run.config.Constraints)
+	iterationBest := iterationBestCost(population, run.config.Constraints)
 
 	sortPopulation(population, run.config.Constraints)
 	updateDistribution(run.state, population, run.parameters, generation)
@@ -236,8 +242,9 @@ func (run *optimizationRun) completeGeneration(
 
 	reported := run.reportedState()
 	condition := covarianceConditionNumber(reported.d)
+
 	run.curve = append(run.curve, run.best.Cost)
-	run.generationCurve = append(run.generationCurve, generationBest)
+	run.iterationBestCurve = append(run.iterationBestCurve, iterationBest)
 	run.sigmaHistory = append(run.sigmaHistory, run.state.sigma)
 	run.conditionHistory = append(run.conditionHistory, condition)
 	notifyLifecycle(
@@ -253,22 +260,25 @@ func (run *optimizationRun) completeGeneration(
 // reportedState returns the state to report for the iteration that just
 // completed, with B and D consistent with its mean and sigma.
 //
-// The strategy itself refreshes its eigensystem lazily, so state.b and state.d
-// can lag the covariance by up to lambda/(10*n*(c1+cmu)) evaluations. That is
-// invisible to sampling but wrong for reporting: it would make an observed
-// ellipse describe an older covariance than the reported mean, and it would
-// turn the condition-number history into a step function that moves only when
-// the lazy decomposition happens to fire.
+// The strategy refreshes its own eigensystem lazily, so state.b and state.d can
+// lag the covariance by up to lambda/(10*n*(c1+cmu)) evaluations. That is
+// invisible to sampling but wrong for reporting: an observed ellipse would
+// describe an older covariance than the mean beside it, and the condition
+// number history would become a step function that moves only when the lazy
+// decomposition happens to fire.
 //
-// A registered distribution observer therefore pays for one decomposition per
-// iteration; runs without one keep the lazy hot path untouched. Separable
-// covariance maintains D exactly every generation and needs no extra work.
+// The eager decomposition is not wasted work. The covariance does not change
+// again until the next iteration completes, so it is stored on the state and
+// the lazy refresh at the top of the next generation consumes it. The strategy
+// performs the same decomposition of the same matrix it always did, one
+// generation earlier, which keeps the run bit-identical.
 //
-// The fresh eigensystem is carried on a shallow copy of the state rather than
-// written back to it, so registering an observer cannot change the lazy
-// refresh schedule and therefore cannot change the run.
+// The reported eigensystem is carried on a shallow copy so that state.b and
+// state.d keep describing the distribution the population was sampled from,
+// which is what the convergence criteria are defined against.
 func (run *optimizationRun) reportedState() *strategyState {
-	if run.options.distributionObserver == nil || run.state.mode == CovarianceSeparable {
+	if run.state.mode == CovarianceSeparable {
+		// Separable covariance maintains D exactly on every generation.
 		return run.state
 	}
 
@@ -279,6 +289,9 @@ func (run *optimizationRun) reportedState() *strategyState {
 		d[index] = math.Sqrt(value)
 	}
 
+	run.state.pendingB = vectors
+	run.state.pendingD = d
+
 	reported := *run.state
 	reported.b = vectors
 	reported.d = d
@@ -286,10 +299,10 @@ func (run *optimizationRun) reportedState() *strategyState {
 	return &reported
 }
 
-// generationBestCost returns the best raw cost of one evaluated generation,
+// iterationBestCost returns the best raw cost within one evaluated population,
 // ranked by the same feasibility rules as the global best. Boundary penalties
 // are excluded so that the value is comparable with GlobalBest.Cost.
-func generationBestCost(population []candidate, constraints *ConstraintConfig) float64 {
+func iterationBestCost(population []candidate, constraints *ConstraintConfig) float64 {
 	best := CandidateEvaluation{Cost: math.Inf(1), ConstraintViolation: math.Inf(1)}
 
 	for _, current := range population {
@@ -327,6 +340,7 @@ func (run *optimizationRun) shouldStop(population []candidate) bool {
 func (run *optimizationRun) result(seed int64, seedKnown bool) *Result {
 	return &Result{
 		ConvergenceCurve:       run.curve,
+		IterationBestHistory:   run.iterationBestCurve,
 		SigmaHistory:           run.sigmaHistory,
 		ConditionNumberHistory: run.conditionHistory,
 		TerminationReason:      run.reason,
@@ -735,10 +749,21 @@ func refreshEigensystemIfStale(
 		return false
 	}
 
-	values, vectors := symmetricEigendecomposition(state.c)
-	for index, value := range values {
-		state.d[index] = math.Sqrt(value)
+	values := state.pendingD
+	vectors := state.pendingB
+
+	if vectors == nil {
+		eigenvalues, eigenvectors := symmetricEigendecomposition(state.c)
+		values = make([]float64, len(eigenvalues))
+
+		for index, value := range eigenvalues {
+			values[index] = math.Sqrt(value)
+		}
+
+		vectors = eigenvectors
 	}
+
+	copy(state.d, values)
 
 	state.b = vectors
 	state.eigenEval = evaluations

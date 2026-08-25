@@ -2,23 +2,47 @@ package cmaes
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"math"
+	"math/rand"
 	"reflect"
+	"sync"
 	"testing"
 )
 
 type lifecycleLog struct {
 	messages []string
+	levels   []slog.Level
+	mutex    sync.Mutex
 }
 
 func (logger *lifecycleLog) Log(
 	_ context.Context,
-	_ slog.Level,
+	level slog.Level,
 	message string,
 	_ ...any,
 ) {
+	logger.mutex.Lock()
+	defer logger.mutex.Unlock()
+
 	logger.messages = append(logger.messages, message)
+	logger.levels = append(logger.levels, level)
+}
+
+func (logger *lifecycleLog) count(message string) int {
+	logger.mutex.Lock()
+	defer logger.mutex.Unlock()
+
+	total := 0
+
+	for _, recorded := range logger.messages {
+		if recorded == message {
+			total++
+		}
+	}
+
+	return total
 }
 
 func TestLifecycleObserversHistoriesAndInitialPopulation(t *testing.T) {
@@ -98,6 +122,190 @@ func TestLifecycleObserversHistoriesAndInitialPopulation(t *testing.T) {
 	}
 	if !reflect.DeepEqual(logger.messages, wantLogs) {
 		t.Errorf("log messages = %v, want %v", logger.messages, wantLogs)
+	}
+
+	// Per-iteration events belong on debug: an info sink must not receive one
+	// line per generation for the whole iteration budget.
+	wantLevels := []slog.Level{
+		slog.LevelInfo, slog.LevelDebug, slog.LevelDebug, slog.LevelInfo,
+	}
+	if !reflect.DeepEqual(logger.levels, wantLevels) {
+		t.Errorf("log levels = %v, want %v", logger.levels, wantLevels)
+	}
+}
+
+// reconstructCovariance rebuilds C from an eigensystem as B*diag(D^2)*B^T.
+func reconstructCovariance(eigenvectors [][]float64, axisScales []float64) [][]float64 {
+	size := len(axisScales)
+	covariance := make([][]float64, size)
+
+	for row := range covariance {
+		covariance[row] = make([]float64, size)
+		for column := range covariance[row] {
+			for axis, scale := range axisScales {
+				covariance[row][column] +=
+					eigenvectors[row][axis] * scale * scale * eigenvectors[column][axis]
+			}
+		}
+	}
+
+	return covariance
+}
+
+func TestDistributionSnapshotDescribesTheSameIteration(t *testing.T) {
+	const generations = 12
+
+	config := optimizationConfig(4, 94, sphere)
+	config.Convergence = nil
+	config.MaxIterations = generations
+
+	var snapshots []DistributionSnapshot
+
+	options, err := resolveRunOptions([]RunOption{
+		WithDistributionObserver(func(snapshot DistributionSnapshot) {
+			snapshots = append(snapshots, snapshot)
+		}),
+	})
+	if err != nil {
+		t.Fatalf("resolveRunOptions: %v", err)
+	}
+
+	run := newOptimizationRun(config, options)
+	rng := rand.New(rand.NewSource(94))
+
+	for generation := range generations {
+		stop, generationErr := run.executeGeneration(context.Background(), generation, rng)
+		if generationErr != nil {
+			t.Fatalf("generation %d: %v", generation, generationErr)
+		}
+
+		if stop {
+			t.Fatalf("generation %d stopped early", generation)
+		}
+
+		snapshot := snapshots[len(snapshots)-1]
+
+		assertMatrixClose(t,
+			reconstructCovariance(snapshot.Eigenvectors, snapshot.Eigenvalues),
+			run.state.c, 1e-9)
+		assertVectorClose(t, snapshot.Mean, run.state.m, 0)
+
+		if snapshot.Sigma != run.state.sigma {
+			t.Fatalf("generation %d snapshot sigma = %v, want %v",
+				generation, snapshot.Sigma, run.state.sigma)
+		}
+
+		if snapshot.ConditionNumber != covarianceConditionNumber(snapshot.Eigenvalues) {
+			t.Fatalf("generation %d condition number = %v, does not match its own axis scales",
+				generation, snapshot.ConditionNumber)
+		}
+
+		if run.conditionHistory[generation] != snapshot.ConditionNumber {
+			t.Fatalf("generation %d condition history = %v, snapshot = %v",
+				generation, run.conditionHistory[generation], snapshot.ConditionNumber)
+		}
+	}
+}
+
+func TestReportedEigensystemIsReusedByTheLazyRefresh(t *testing.T) {
+	config := optimizationConfig(4, 95, sphere)
+	config.Convergence = nil
+
+	run := newOptimizationRun(config, runOptions{})
+	rng := rand.New(rand.NewSource(95))
+
+	for generation := range 5 {
+		_, err := run.executeGeneration(context.Background(), generation, rng)
+		if err != nil {
+			t.Fatalf("generation %d: %v", generation, err)
+		}
+	}
+
+	// The cached decomposition is what the lazy refresh will install at the top
+	// of the next generation, so it has to equal a decomposition taken there.
+	values, vectors := symmetricEigendecomposition(run.state.c)
+	axisScales := make([]float64, len(values))
+
+	for index, value := range values {
+		axisScales[index] = math.Sqrt(value)
+	}
+
+	assertVectorClose(t, run.state.pendingD, axisScales, 0)
+	assertMatrixClose(t, run.state.pendingB, vectors, 0)
+}
+
+func TestObserverAndLoggerPanicsAreContained(t *testing.T) {
+	config := optimizationConfig(3, 96, sphere)
+	config.Convergence = nil
+	config.MaxIterations = 3
+	logger := &lifecycleLog{}
+
+	result, err := OptimizeContext(
+		context.Background(),
+		config,
+		WithProgressObserver(func(Progress) { panic("progress") }),
+		WithPopulationObserver(func(PopulationSnapshot) { panic("population") }),
+		WithDistributionObserver(func(DistributionSnapshot) { panic("distribution") }),
+		WithLogger(logger),
+	)
+	if err != nil {
+		t.Fatalf("OptimizeContext: %v", err)
+	}
+
+	if result.IterationCount != config.MaxIterations {
+		t.Errorf("iterations = %d, want %d: a panicking observer aborted the run",
+			result.IterationCount, config.MaxIterations)
+	}
+
+	if len(result.GlobalBest.Position) != config.ProblemSize {
+		t.Errorf("best = %+v, want the best found before the panics", result.GlobalBest)
+	}
+
+	wantPanics := 3 * config.MaxIterations
+	if got := logger.count("optimization observer panicked"); got != wantPanics {
+		t.Errorf("reported observer panics = %d, want %d", got, wantPanics)
+	}
+}
+
+func TestPanickingLoggerDoesNotAbortTheRun(t *testing.T) {
+	config := optimizationConfig(3, 97, sphere)
+	config.Convergence = nil
+	config.MaxIterations = 3
+
+	result, err := OptimizeContext(
+		context.Background(),
+		config,
+		WithLogger(loggerFunc(func(context.Context, slog.Level, string, ...any) {
+			panic("logger")
+		})),
+	)
+	if err != nil {
+		t.Fatalf("OptimizeContext: %v", err)
+	}
+
+	if result.IterationCount != config.MaxIterations {
+		t.Errorf("iterations = %d, want %d: a panicking logger aborted the run",
+			result.IterationCount, config.MaxIterations)
+	}
+}
+
+type loggerFunc func(ctx context.Context, level slog.Level, message string, args ...any)
+
+func (log loggerFunc) Log(ctx context.Context, level slog.Level, message string, args ...any) {
+	log(ctx, level, message, args...)
+}
+
+func TestFailedRunLogsATerminalEvent(t *testing.T) {
+	logger := &lifecycleLog{}
+	logOptimizationFailed(context.Background(), logger, errors.New("objective backend down"))
+
+	wantMessages := []string{"optimization failed"}
+	wantLevels := []slog.Level{slog.LevelError}
+
+	if !reflect.DeepEqual(logger.messages, wantMessages) ||
+		!reflect.DeepEqual(logger.levels, wantLevels) {
+		t.Errorf("failure log = (%v, %v), want (%v, %v)",
+			logger.messages, logger.levels, wantMessages, wantLevels)
 	}
 }
 

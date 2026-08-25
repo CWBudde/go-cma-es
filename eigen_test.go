@@ -8,10 +8,9 @@ import (
 
 func TestSymmetricEigendecompositionKnownAnswers(t *testing.T) {
 	tests := []struct {
-		name      string
-		matrix    [][]float64
-		want      []float64
-		tolerance float64
+		name   string
+		matrix [][]float64
+		want   []float64
 	}{
 		{
 			name: "diagonal",
@@ -20,8 +19,7 @@ func TestSymmetricEigendecompositionKnownAnswers(t *testing.T) {
 				{0, 1, 0},
 				{0, 0, 2},
 			},
-			want:      []float64{1, 2, 4},
-			tolerance: 1e-15,
+			want: []float64{1, 2, 4},
 		},
 		{
 			name: "two by two rotation",
@@ -29,8 +27,7 @@ func TestSymmetricEigendecompositionKnownAnswers(t *testing.T) {
 				{1.75, -1.299038105676658},
 				{-1.299038105676658, 3.25},
 			},
-			want:      []float64{1, 4},
-			tolerance: 1e-15,
+			want: []float64{1, 4},
 		},
 		{
 			// The reference spectrum is independently checkable: its sum
@@ -48,23 +45,23 @@ func TestSymmetricEigendecompositionKnownAnswers(t *testing.T) {
 				2.4236087057520955e-1,
 				1.6188998589243391,
 			},
-			// The smallest eigenvalue is 1.08e-7 and sets the tolerance for the
-			// whole case. Cyclic Jacobi stops once the largest off-diagonal
-			// entry is below jacobiTolerance times the largest diagonal entry,
-			// i.e. at an absolute residual of about 1.6e-14, which bounds the
-			// absolute error of every eigenvalue. Against 1.08e-7 that is a
-			// relative bound of 1.5e-7; the sweeps in fact land four orders
-			// tighter, so 1e-9 is asserted. The larger eigenvalues are pinned
-			// far more tightly by the trace invariant below.
-			tolerance: 1e-9,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			values, vectors := symmetricEigendecomposition(test.matrix)
+
+			// A symmetric eigensolver is backward stable, so the absolute
+			// error of every eigenvalue is bounded by about eps times the
+			// largest eigenvalue. Relative to the smallest eigenvalue that is
+			// cond(A) * eps, which is 9e-16 for the two well-conditioned cases
+			// and 3e-9 for Hilbert-6 (cond 1.5e7). Asserting that bound keeps
+			// the large eigenvalues pinned to full precision while allowing
+			// the small ones exactly the slack the conditioning demands.
+			tolerance := math.Max(machineEpsilon, conditionNumber(test.want)*machineEpsilon)
 			for index, want := range test.want {
-				assertClose(t, values[index], want, test.tolerance)
+				assertClose(t, values[index], want, tolerance)
 			}
 
 			assertReconstruction(t, test.matrix, values, vectors)
@@ -93,48 +90,69 @@ func TestSymmetricEigendecompositionHilbertInvariants(t *testing.T) {
 	trace := 1 + 1.0/3 + 1.0/5 + 1.0/7 + 1.0/9 + 1.0/11
 	determinant := 1 / 186313420339200000.0
 
-	assertClose(t, sum, trace, 1e-15)
-	assertClose(t, product, determinant, 1e-9)
+	// The sum is dominated by the largest eigenvalue and is accurate to
+	// roundoff. The product inherits the relative error of every factor, so it
+	// is bounded by the number of factors times cond(A) * eps, about 2e-8 for
+	// Hilbert-6.
+	assertClose(t, sum, trace, 4*machineEpsilon)
+	assertClose(t, product, determinant, float64(len(values))*1.5e7*machineEpsilon)
 }
 
-// TestSymmetricEigendecompositionIllConditioned uses a matrix whose exact
-// spectrum is {a-b, a+b, 1e8} for the stored a = 0.5 and b = nextafter(0.5, 0),
-// so the two small eigenvalues are 5.551115123125783e-17 (one ulp of 0.5) and
-// 0.9999999999999999. The smallest sits far below the eigenvalue floor, so the
-// decomposition must report it as the floor rather than as zero, and the
-// condition number must stay finite and below the default ConditionCov.
-func TestSymmetricEigendecompositionIllConditioned(t *testing.T) {
-	const large = 1e8
+// TestSymmetricEigendecompositionKeepsGenuineIllConditioning is the guard
+// against repairing eigenvalues that need no repair. [[a,b],[b,a]] has the
+// exact eigenvalues a-b and a+b; with a = (1+2^-50)/2 and b = (1-2^-50)/2,
+// both of which are exact in binary floating point, that is 2^-50 and 1, a
+// condition number of 2^50 = 1.13e15. The matrix is positive definite, so the
+// spectrum must come back untouched and its condition number must still
+// exceed the default ConditionCov, which is what lets the condition_number
+// criterion fire on a genuinely degenerate run.
+func TestSymmetricEigendecompositionKeepsGenuineIllConditioning(t *testing.T) {
+	smallest := math.Ldexp(1, -50)
 
-	upper := 0.5
-	lower := math.Nextafter(0.5, 0)
+	upper := (1 + smallest) / 2
+	lower := (1 - smallest) / 2
 
 	matrix := [][]float64{
-		{upper, lower, 0},
-		{lower, upper, 0},
-		{0, 0, large},
+		{upper, lower},
+		{lower, upper},
 	}
 
 	values, vectors := symmetricEigendecomposition(matrix)
 
-	assertClose(t, values[1], upper+lower, 1e-15)
-	assertClose(t, values[2], large, 1e-15)
-	assertClose(t, values[0], eigenvalueFloorRatio*large, 1e-15)
+	assertClose(t, values[0], smallest, machineEpsilon)
+	assertClose(t, values[1], 1, machineEpsilon)
 
-	if values[0] <= 0 {
-		t.Fatalf("smallest eigenvalue = %g, want strictly positive", values[0])
+	if values[0] >= eigenvalueRepairRatio*values[1] {
+		t.Fatalf("smallest eigenvalue = %g, want it below the repair value %g",
+			values[0], eigenvalueRepairRatio*values[1])
 	}
 
 	condition := conditionNumber(values)
-	if math.IsInf(condition, 0) || condition > defaultConditionCov {
-		t.Fatalf("condition number = %g, want finite and at most %g", condition, defaultConditionCov)
+	if math.IsInf(condition, 0) || condition <= defaultConditionCov {
+		t.Fatalf("condition number = %g, want finite and above %g", condition, defaultConditionCov)
 	}
 
+	assertReconstruction(t, matrix, values, vectors)
 	assertOrthonormal(t, vectors)
+}
 
-	// The clamped axis is the only one that is perturbed, and it can only shift
-	// the reconstruction by the floor itself.
-	assertReconstructionWithin(t, matrix, values, vectors, 4*eigenvalueFloorRatio*large)
+// TestSymmetricEigendecompositionRepairsBelowSmallestPositive covers the case
+// where the repair value would exceed a genuinely positive eigenvalue.
+// diag(0, 2^-50, 1) is already diagonal, so its exact spectrum is its own
+// diagonal; the repaired zero must not overtake 2^-50 and break the ascending
+// order the callers rely on.
+func TestSymmetricEigendecompositionRepairsBelowSmallestPositive(t *testing.T) {
+	smallest := math.Ldexp(1, -50)
+
+	values, _ := symmetricEigendecomposition([][]float64{
+		{0, 0, 0},
+		{0, smallest, 0},
+		{0, 0, 1},
+	})
+
+	assertClose(t, values[0], smallest, 0)
+	assertClose(t, values[1], smallest, 0)
+	assertClose(t, values[2], 1, 0)
 }
 
 // TestSymmetricEigendecompositionSingular decomposes a genuinely singular
@@ -156,7 +174,7 @@ func TestSymmetricEigendecompositionSingular(t *testing.T) {
 		}
 	}
 
-	assertClose(t, values[0], 2*eigenvalueFloorRatio, 1e-15)
+	assertClose(t, values[0], 2*eigenvalueRepairRatio, 1e-15)
 	assertClose(t, values[1], 1, 1e-14)
 	assertClose(t, values[2], 2, 1e-14)
 
@@ -182,7 +200,7 @@ func TestSymmetricEigendecompositionIndefinite(t *testing.T) {
 
 	values, vectors := symmetricEigendecomposition(matrix)
 
-	assertClose(t, values[0], eigenvalueFloorRatio, 1e-15)
+	assertClose(t, values[0], eigenvalueRepairRatio, 1e-15)
 	assertClose(t, values[1], 1, 1e-14)
 
 	if values[0] <= 0 {
@@ -231,7 +249,7 @@ func TestSymmetricEigendecompositionGuards(t *testing.T) {
 		t.Fatalf("negative eigenvalue was not lifted above zero: %g", values[0])
 	}
 
-	assertClose(t, values[0], 3*eigenvalueFloorRatio, 1e-15)
+	assertClose(t, values[0], 3*eigenvalueRepairRatio, 1e-15)
 	assertClose(t, values[1], 3, 1e-15)
 	assertOrthonormal(t, vectors)
 }
@@ -247,6 +265,7 @@ func TestSymmetricEigendecompositionNegativeSemidefinite(t *testing.T) {
 
 	for index, value := range values {
 		assertClose(t, value, 1, 0)
+
 		if value <= 0 {
 			t.Fatalf("eigenvalue[%d] = %g, want strictly positive", index, value)
 		}
@@ -311,6 +330,9 @@ func BenchmarkEigenDecomposition(b *testing.B) {
 	}
 }
 
+// machineEpsilon is the double precision unit roundoff, 2^-52.
+const machineEpsilon = 2.220446049250313e-16
+
 func hilbertMatrix(size int) [][]float64 {
 	matrix := makeSquareMatrix(size)
 	for row := range size {
@@ -346,6 +368,7 @@ func assertReconstruction(
 	t.Helper()
 
 	scale := 0.0
+
 	for row := range matrix {
 		for column := range matrix[row] {
 			scale = math.Max(scale, math.Abs(matrix[row][column]))

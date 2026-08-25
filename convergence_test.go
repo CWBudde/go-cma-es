@@ -21,7 +21,7 @@ func convergenceTestState() *strategyState {
 // arXiv:1604.00772, App. B): TolX = 1e-12 relative to sigma^(0),
 // TolFun = 1e-12, TolXUp = 1e4, ConditionCov = 1e14, both no-effect criteria
 // active. The values are written out here rather than read from
-// NewDefaultConfig so these tests pin behaviour instead of tracking whatever
+// NewDefaultConfig so these tests pin behavior instead of tracking whatever
 // the default constants happen to be. Stagnation is this library's own
 // criterion and is left off; the cases that need it switch it on.
 func hansenConvergence() ConvergenceConfig {
@@ -195,6 +195,8 @@ func TestConvergencePrecedenceOrder(t *testing.T) {
 			name:  "TolX outranks TolFun",
 			order: []TerminationReason{TerminationTolX, TerminationTolFun},
 			run: func(t *testing.T, tracker *convergenceTracker) (TerminationReason, bool) {
+				t.Helper()
+
 				state := convergenceTestState()
 				fillWindow(t, tracker, state)
 				state.sigma = 1e-13
@@ -207,6 +209,8 @@ func TestConvergencePrecedenceOrder(t *testing.T) {
 			name:  "TolFun outranks TolXUp",
 			order: []TerminationReason{TerminationTolFun, TerminationTolXUp},
 			run: func(t *testing.T, tracker *convergenceTracker) (TerminationReason, bool) {
+				t.Helper()
+
 				state := convergenceTestState()
 				fillWindow(t, tracker, state)
 				state.sigma = 1e5
@@ -220,6 +224,8 @@ func TestConvergencePrecedenceOrder(t *testing.T) {
 			name:  "TolXUp outranks the condition number",
 			order: []TerminationReason{TerminationTolXUp, TerminationConditionNumber},
 			run: func(t *testing.T, tracker *convergenceTracker) (TerminationReason, bool) {
+				t.Helper()
+
 				state := convergenceTestState()
 				if reason, stop := tracker.observe(1, best, state, population); stop {
 					t.Fatalf("iteration 1 stopped early with %q", reason)
@@ -239,6 +245,8 @@ func TestConvergencePrecedenceOrder(t *testing.T) {
 				TerminationConditionNumber, TerminationNoEffectAxis, TerminationNoEffectCoord,
 			},
 			run: func(t *testing.T, tracker *convergenceTracker) (TerminationReason, bool) {
+				t.Helper()
+
 				state := convergenceTestState()
 				if reason, stop := tracker.observe(1, best, state, population); stop {
 					t.Fatalf("iteration 1 stopped early with %q", reason)
@@ -263,6 +271,8 @@ func TestConvergencePrecedenceOrder(t *testing.T) {
 			},
 			order: []TerminationReason{TerminationNoEffectCoord, TerminationStagnation},
 			run: func(t *testing.T, tracker *convergenceTracker) (TerminationReason, bool) {
+				t.Helper()
+
 				state := convergenceTestState()
 				state.m = []float64{math.MaxFloat64 / 2, 0}
 
