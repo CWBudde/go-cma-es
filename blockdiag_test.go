@@ -27,7 +27,7 @@ func TestBlockConfigurationValidation(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			config := NewBlockDiagonalConfig(4, test.size)
-			config.ObjectiveFunc = sphere
+			config.ObjectiveFunc = Sphere
 			config.LowerBound = -5
 			config.UpperBound = 5
 			config.BlockGroups = test.groups
@@ -43,7 +43,7 @@ func TestBlockConfigurationValidation(t *testing.T) {
 func TestBlockGroupsOverrideBlockSizeAndAreCopied(t *testing.T) {
 	config := NewBlockDiagonalConfig(6, 0)
 	config.BlockGroups = [][]int{{0, 3}, {1, 4}, {2, 5}}
-	config.ObjectiveFunc = sphere
+	config.ObjectiveFunc = Sphere
 	config.LowerBound = -5
 	config.UpperBound = 5
 
@@ -276,7 +276,8 @@ func TestBlockDistributionSnapshotReportsBlocksWhenCanonicalized(t *testing.T) {
 			}
 
 			snapshot.Blocks[0].Eigenvectors[0][0] = 99
-			if state.b != nil && state.b[0][0] == 99 {
+
+			if len(state.b) > 0 && state.b[0][0] == 99 {
 				t.Fatal("distribution snapshot aliases the canonicalized eigensystem")
 			}
 		})
@@ -416,7 +417,7 @@ func blockStructuredEllipsoid(position []float64) float64 {
 func BenchmarkBlockDiagonalN14000K7(b *testing.B) {
 	for range b.N {
 		config := NewBlockDiagonalConfig(14_000, 7)
-		config.ObjectiveFunc = sphere
+		config.ObjectiveFunc = Sphere
 		config.Rand = rand.New(rand.NewSource(805))
 		config.LowerBound = -10
 		config.UpperBound = 10

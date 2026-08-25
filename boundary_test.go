@@ -487,7 +487,7 @@ func TestPenaltyBoundaryDoesNotDistortSigmaOnInteriorProblem(t *testing.T) {
 
 	for _, method := range methods {
 		t.Run(string(method), func(t *testing.T) {
-			config := optimizationConfig(4, 402, sphere)
+			config := optimizationConfig(4, 402, Sphere)
 			config.LowerBound = -1
 			config.UpperBound = 1
 			config.InitialSigma = 5

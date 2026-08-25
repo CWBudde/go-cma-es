@@ -2,10 +2,10 @@
 
 Module: `github.com/CWBudde/go-cma-es`
 Package: `cmaes` (flat, at the repository root)
-Status: **Phases 0–9 and 12 complete.** Full, separable, and block-diagonal CMA-ES,
+Status: **Phases 0–9, 12 and 13 complete.** Full, separable, and block-diagonal CMA-ES,
 active covariance adaptation, boundary handling, nonlinear constraints, convergence
-criteria, lifecycle observers, IPOP/BIPOP restarts, and the WebAssembly showcase are
-implemented. Nothing is released.
+criteria, lifecycle observers, IPOP/BIPOP restarts, the WebAssembly showcase, and the
+shared benchmark function suite are implemented. Nothing is released.
 
 This document is the roadmap and the single source of truth for progress. It is organised
 the same way as the sibling [Mayfly](https://github.com/cwbudde/mayfly) and
@@ -437,13 +437,43 @@ immediately after Phase 5 for exactly that reason.
 
 ---
 
+## Phase 13 — Benchmark function suite ✅
+
+- [x] `functions.go`: the sibling suite copied verbatim from Mayfly and Dragonfly — Sphere,
+      Rastrigin, Rosenbrock, Ackley, Griewank, Schwefel, Levy, Zakharov, Michalewicz,
+      DixonPrice, BentCigar, Discus, Weierstrass, HappyCat, ExpandedSchafferF6 — with only
+      the package clause and the header's sibling reference changed, so the three files
+      stay diffable
+- [x] `Himmelblau`, new in all three suites: four equal global minima in two dimensions,
+      extended to n by summing over disjoint coordinate pairs, with an odd dimension's
+      unpaired coordinate contributing its square
+- [x] Single-objective only — the Deferred section rules out MO-CMA-ES, so Dragonfly's
+      ZDT/Schaffer block is deliberately not ported
+- [x] `functions_test.go`: the sibling tests, including the suite-wide
+      `TestBenchmarkFunctionsEmptyInput` convention check, plus `TestHimmelblau`
+- [x] Delete the duplicated `sphere` and `rastrigin` test helpers in favour of the library
+      functions; the seeded tests keep their existing thresholds unchanged
+- [x] `examples/wasm-demo/landscape.go` consumes `cmaes.Rosenbrock`, `cmaes.Rastrigin` and
+      `cmaes.Himmelblau`; only the rotated condition-10⁶ ellipsoid stays local, because the
+      sibling suite has no counterpart to it
+
+**Rationale**: The two siblings ship one identical suite, and a CMA-ES result is only
+directly comparable with a Mayfly or Dragonfly result if it was scored by the same
+function — a reordered summation or a different Rastrigin constant is enough to make two
+tables disagree for reasons that have nothing to do with the optimizers. Copying the file
+rather than rewriting it is the point: the diff between the three is the guarantee. The
+demo's local copies were a second source of the same drift, one dimension deep, and
+folding them back removes it.
+
+---
+
 ## Phase order
 
 Phases 0 → 5 are strictly sequential. After Phase 5 the graph opens up:
 
 ```
 0 → 1 → 2 → 3 → 4 → 5 ─┬─→ 6 → 7 → 8            (library depth)
-                       ├─→ 12                    (web demo)
+                       ├─→ 12 → 13               (web demo, benchmark suite)
                        └─→ 9 → 10 → 11           (integration and measurement)
 ```
 

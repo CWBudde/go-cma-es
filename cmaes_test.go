@@ -22,17 +22,8 @@ func optimizationConfig(problemSize int, seed int64, objective ObjectiveFunction
 	return config
 }
 
-func sphere(position []float64) float64 {
-	var cost float64
-	for _, value := range position {
-		cost += value * value
-	}
-
-	return cost
-}
-
 func TestOptimizeSphere(t *testing.T) {
-	config := optimizationConfig(10, 11, sphere)
+	config := optimizationConfig(10, 11, Sphere)
 	config.InitialMean = filledVector(10, 3)
 	config.InitialSigma = 1
 	config.MaxIterations = 500
@@ -103,12 +94,12 @@ func TestOptimizeRosenbrock(t *testing.T) {
 }
 
 func TestSeededRunsAreBitIdentical(t *testing.T) {
-	first, err := Optimize(optimizationConfig(6, 44, sphere))
+	first, err := Optimize(optimizationConfig(6, 44, Sphere))
 	if err != nil {
 		t.Fatalf("first Optimize: %v", err)
 	}
 
-	second, err := Optimize(optimizationConfig(6, 44, sphere))
+	second, err := Optimize(optimizationConfig(6, 44, Sphere))
 	if err != nil {
 		t.Fatalf("second Optimize: %v", err)
 	}
@@ -119,7 +110,7 @@ func TestSeededRunsAreBitIdentical(t *testing.T) {
 }
 
 func TestParallelEvaluationMatchesSerial(t *testing.T) {
-	serialConfig := optimizationConfig(8, 55, sphere)
+	serialConfig := optimizationConfig(8, 55, Sphere)
 	serialConfig.MaxIterations = 250
 
 	serial, err := Optimize(serialConfig)
@@ -127,7 +118,7 @@ func TestParallelEvaluationMatchesSerial(t *testing.T) {
 		t.Fatalf("serial Optimize: %v", err)
 	}
 
-	parallelConfig := optimizationConfig(8, 55, sphere)
+	parallelConfig := optimizationConfig(8, 55, Sphere)
 	parallelConfig.MaxIterations = serialConfig.MaxIterations
 	parallelConfig.EnableParallel = true
 	parallelConfig.MaxWorkers = 3
@@ -148,7 +139,7 @@ func TestFunctionEvaluationAccounting(t *testing.T) {
 	config := optimizationConfig(4, 66, func(position []float64) float64 {
 		calls.Add(1)
 
-		return sphere(position)
+		return Sphere(position)
 	})
 	config.MaxIterations = 100
 	config.MaxEvaluations = 37
@@ -207,7 +198,7 @@ func TestHeavisideCorrectionGatesPathAndCompensatesCovariance(t *testing.T) {
 }
 
 func TestLazyEigendecompositionUsesPublishedStrictTrigger(t *testing.T) {
-	config := optimizationConfig(2, 1, sphere)
+	config := optimizationConfig(2, 1, Sphere)
 	parameters := deriveStrategyParameters(config)
 	state := newStrategyState(config)
 	state.c = [][]float64{{2, 0.5}, {0.5, 1}}
@@ -263,7 +254,7 @@ func TestSamplingAndRecombinationEquations(t *testing.T) {
 }
 
 func TestOptimizeContextValidationAndCancellation(t *testing.T) {
-	config := optimizationConfig(2, 77, sphere)
+	config := optimizationConfig(2, 77, Sphere)
 
 	result, err := OptimizeContext(nil, config) //nolint:staticcheck // Intentionally verify nil-context rejection.
 	if result != nil || err == nil {
@@ -283,7 +274,7 @@ func TestOptimizeContextValidationAndCancellation(t *testing.T) {
 		t.Fatalf("invalid run option returned (%v, %v), want (nil, error)", result, err)
 	}
 
-	constrained := optimizationConfig(2, 78, sphere)
+	constrained := optimizationConfig(2, 78, Sphere)
 	constrained.Constraints = &ConstraintConfig{}
 	constrained.MaxIterations = 1
 
@@ -292,7 +283,7 @@ func TestOptimizeContextValidationAndCancellation(t *testing.T) {
 		t.Fatalf("constraints returned (%v, %v), want (result, nil)", result, err)
 	}
 
-	withConvergence := optimizationConfig(2, 79, sphere)
+	withConvergence := optimizationConfig(2, 79, Sphere)
 	withConvergence.Convergence = &ConvergenceConfig{}
 	withConvergence.MaxIterations = 1
 
@@ -304,7 +295,7 @@ func TestOptimizeContextValidationAndCancellation(t *testing.T) {
 
 func TestGeneratedRandomSourceIsRecorded(t *testing.T) {
 	seed := int64(88)
-	config := optimizationConfig(2, seed, sphere)
+	config := optimizationConfig(2, seed, Sphere)
 	config.MaxIterations = 1
 
 	result, err := Optimize(config)
@@ -321,7 +312,7 @@ func TestGeneratedRandomSourceIsRecorded(t *testing.T) {
 			result.Seed, result.SeedKnown, seed)
 	}
 
-	direct := optimizationConfig(2, 0, sphere)
+	direct := optimizationConfig(2, 0, Sphere)
 	direct.Seed = nil
 	direct.Rand = rand.New(rand.NewSource(99))
 	direct.MaxIterations = 1
@@ -338,7 +329,7 @@ func TestGeneratedRandomSourceIsRecorded(t *testing.T) {
 }
 
 func TestConfigIsReusableAcrossRuns(t *testing.T) {
-	config := optimizationConfig(4, 101, sphere)
+	config := optimizationConfig(4, 101, Sphere)
 	config.MaxIterations = 30
 
 	first, err := Optimize(config)
@@ -367,7 +358,7 @@ type cancellingObjective struct {
 }
 
 func (objective *cancellingObjective) evaluate(position []float64) float64 {
-	cost := sphere(position)
+	cost := Sphere(position)
 
 	objective.mutex.Lock()
 	objective.costs = append(objective.costs, cost)
@@ -484,7 +475,7 @@ func TestCancellationAfterAFullGenerationCompletesItIdentically(t *testing.T) {
 }
 
 func TestNonContextEvaluationErrorAbortsTheRun(t *testing.T) {
-	config := optimizationConfig(2, 104, sphere)
+	config := optimizationConfig(2, 104, Sphere)
 	run := newOptimizationRun(config, runOptions{})
 	failure := errors.New("objective backend unavailable")
 
@@ -499,16 +490,7 @@ func TestNonContextEvaluationErrorAbortsTheRun(t *testing.T) {
 }
 
 func TestIterationBestHistoryRecordsOscillation(t *testing.T) {
-	rastrigin := func(position []float64) float64 {
-		cost := 10 * float64(len(position))
-		for _, value := range position {
-			cost += value*value - 10*math.Cos(2*math.Pi*value)
-		}
-
-		return cost
-	}
-
-	config := optimizationConfig(5, 105, rastrigin)
+	config := optimizationConfig(5, 105, Rastrigin)
 	config.Convergence = nil
 	config.MaxIterations = 60
 

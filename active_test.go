@@ -116,7 +116,7 @@ func TestActiveCMAIsNoWorseThanPassive(t *testing.T) {
 		objective  ObjectiveFunction
 		iterations int
 	}{
-		{name: "sphere", objective: sphere, iterations: 300},
+		{name: "sphere", objective: Sphere, iterations: 300},
 		{
 			name: "ellipsoid",
 			objective: func(position []float64) float64 {

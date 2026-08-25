@@ -86,6 +86,7 @@ corresponding phase is complete.
 | `separable.go`     | sep-CMA-ES; `active.go` for negative rank-µ weights               |
 | `blockdiag.go`     | block-diagonal covariance                                         |
 | `restart.go`       | IPOP and BIPOP                                                    |
+| `functions.go`     | the shared benchmark objective suite                              |
 
 **No third-party numerics.** The eigendecomposition is written here, in `eigen.go`,
 rather than pulled from gonum. That is a deliberate constraint inherited from the sibling

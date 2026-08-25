@@ -132,7 +132,7 @@ func TestSeparableDistributionSnapshotUsesCoordinateAxes(t *testing.T) {
 
 func TestOptimizeSeparableIsDeterministicAndParallelEquivalent(t *testing.T) {
 	serialConfig := NewSeparableConfig(20)
-	serialConfig.ObjectiveFunc = sphere
+	serialConfig.ObjectiveFunc = Sphere
 	serialConfig.Seed = new(int64)
 	*serialConfig.Seed = 612
 	serialConfig.LowerBound = -10
@@ -147,7 +147,7 @@ func TestOptimizeSeparableIsDeterministicAndParallelEquivalent(t *testing.T) {
 	}
 
 	parallelConfig := NewSeparableConfig(20)
-	parallelConfig.ObjectiveFunc = sphere
+	parallelConfig.ObjectiveFunc = Sphere
 	parallelConfig.Seed = new(int64)
 	*parallelConfig.Seed = 612
 	parallelConfig.LowerBound = -10
@@ -177,7 +177,7 @@ func BenchmarkCovarianceModesN200(b *testing.B) {
 		b.Run(string(mode), func(b *testing.B) {
 			for range b.N {
 				config := NewDefaultConfig(200)
-				config.ObjectiveFunc = sphere
+				config.ObjectiveFunc = Sphere
 				config.Rand = rand.New(rand.NewSource(613))
 				config.LowerBound = -10
 				config.UpperBound = 10

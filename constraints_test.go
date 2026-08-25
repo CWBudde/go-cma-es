@@ -497,7 +497,7 @@ func TestOptimizeWithDebConstraintsFindsFeasibleBoundary(t *testing.T) {
 
 func TestConstrainedParallelEvaluationMatchesSerial(t *testing.T) {
 	newConfig := func(parallel bool) *Config {
-		config := optimizationConfig(4, 502, sphere)
+		config := optimizationConfig(4, 502, Sphere)
 		config.MaxIterations = 100
 		config.EnableParallel = parallel
 		config.MaxWorkers = 3

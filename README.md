@@ -46,6 +46,7 @@ CMA-ES answers both halves of that:
 | IPOP / BIPOP restarts       | ready  | shared-budget restart strategies for multimodal problems         |
 | Deterministic parallel eval | ready  | bit-identical to a serial run of the same seed                   |
 | WebAssembly demo            | ready  | watch the covariance ellipse align with the valley               |
+| Benchmark function suite    | ready  | the same objectives as Mayfly and Dragonfly, for comparable runs |
 
 ## Live demo
 

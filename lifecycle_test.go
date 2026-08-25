@@ -46,7 +46,7 @@ func (logger *lifecycleLog) count(message string) int {
 }
 
 func TestLifecycleObserversHistoriesAndInitialPopulation(t *testing.T) {
-	config := optimizationConfig(2, 91, sphere)
+	config := optimizationConfig(2, 91, Sphere)
 	config.Convergence = nil
 	config.MaxIterations = 2
 	initial := [][]float64{{0, 0}}
@@ -154,7 +154,7 @@ func reconstructCovariance(eigenvectors [][]float64, axisScales []float64) [][]f
 func TestDistributionSnapshotDescribesTheSameIteration(t *testing.T) {
 	const generations = 12
 
-	config := optimizationConfig(4, 94, sphere)
+	config := optimizationConfig(4, 94, Sphere)
 	config.Convergence = nil
 	config.MaxIterations = generations
 
@@ -207,7 +207,7 @@ func TestDistributionSnapshotDescribesTheSameIteration(t *testing.T) {
 }
 
 func TestReportedEigensystemIsReusedByTheLazyRefresh(t *testing.T) {
-	config := optimizationConfig(4, 95, sphere)
+	config := optimizationConfig(4, 95, Sphere)
 	config.Convergence = nil
 
 	run := newOptimizationRun(config, runOptions{})
@@ -234,7 +234,7 @@ func TestReportedEigensystemIsReusedByTheLazyRefresh(t *testing.T) {
 }
 
 func TestObserverAndLoggerPanicsAreContained(t *testing.T) {
-	config := optimizationConfig(3, 96, sphere)
+	config := optimizationConfig(3, 96, Sphere)
 	config.Convergence = nil
 	config.MaxIterations = 3
 	logger := &lifecycleLog{}
@@ -267,7 +267,7 @@ func TestObserverAndLoggerPanicsAreContained(t *testing.T) {
 }
 
 func TestPanickingLoggerDoesNotAbortTheRun(t *testing.T) {
-	config := optimizationConfig(3, 97, sphere)
+	config := optimizationConfig(3, 97, Sphere)
 	config.Convergence = nil
 	config.MaxIterations = 3
 
@@ -322,7 +322,7 @@ func TestRunOptionsSnapshotAndValidateSeeds(t *testing.T) {
 		t.Errorf("initial population = %v, want construction-time snapshot", resolved.initialPopulation)
 	}
 
-	config := optimizationConfig(2, 1, sphere)
+	config := optimizationConfig(2, 1, Sphere)
 
 	err = validateRunOptions(config, resolved)
 	if err != nil {
@@ -353,7 +353,7 @@ func TestRunOptionsSnapshotAndValidateSeeds(t *testing.T) {
 }
 
 func TestWithInitialMeanChangesRunWithoutMutatingConfig(t *testing.T) {
-	config := optimizationConfig(2, 92, sphere)
+	config := optimizationConfig(2, 92, Sphere)
 	config.Convergence = nil
 	config.MaxIterations = 1
 	originalMean := append([]float64(nil), config.InitialMean...)
@@ -376,7 +376,7 @@ func TestWithInitialMeanChangesRunWithoutMutatingConfig(t *testing.T) {
 }
 
 func TestCancellationReturnsBestSoFar(t *testing.T) {
-	config := optimizationConfig(3, 93, sphere)
+	config := optimizationConfig(3, 93, Sphere)
 	config.Convergence = nil
 	config.MaxIterations = 20
 	ctx, cancel := context.WithCancel(context.Background())

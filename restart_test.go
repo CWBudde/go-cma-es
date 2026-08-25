@@ -3,7 +3,6 @@ package cmaes
 import (
 	"context"
 	"errors"
-	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -221,7 +220,7 @@ func TestBIPOPFindsRastriginGlobalOptimumWhereSingleRunDoesNot(t *testing.T) {
 	const budget = 80_000
 
 	config := NewDefaultConfig(10)
-	config.ObjectiveFunc = rastrigin
+	config.ObjectiveFunc = Rastrigin
 	config.LowerBound = -5.12
 	config.UpperBound = 5.12
 
@@ -331,13 +330,4 @@ func restartTestConfig(problemSize int, seed int64) *Config {
 	config.Seed = &seed
 
 	return config
-}
-
-func rastrigin(position []float64) float64 {
-	cost := 10 * float64(len(position))
-	for _, coordinate := range position {
-		cost += coordinate*coordinate - 10*math.Cos(2*math.Pi*coordinate)
-	}
-
-	return cost
 }

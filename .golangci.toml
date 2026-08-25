@@ -75,6 +75,16 @@ ignore-string-values = [
   'Ackley',
   'Griewank',
   'Schwefel',
+  'Levy',
+  'Zakharov',
+  'Michalewicz',
+  'DixonPrice',
+  'BentCigar',
+  'Discus',
+  'Weierstrass',
+  'HappyCat',
+  'ExpandedSchafferF6',
+  'Himmelblau',
 ]
 
 [linters.settings.gocritic]

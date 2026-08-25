@@ -51,6 +51,11 @@ refuse to resume across it.
   population and 2σ covariance views, a same-seed/same-budget isotropic comparison,
   aligned cost/σ/condition telemetry, public-API IPOP population doubling, reproducible
   build tooling, and GitHub Pages deployment (Phase 12).
+- `functions.go`: the benchmark objective suite shared verbatim with Mayfly and
+  Dragonfly -- Sphere, Rastrigin, Rosenbrock, Ackley, Griewank, Schwefel, Levy, Zakharov,
+  Michalewicz, DixonPrice, BentCigar, Discus, Weierstrass, HappyCat and
+  ExpandedSchafferF6 -- plus the new n-dimensional `Himmelblau`. The WebAssembly demo now
+  consumes the library functions instead of local copies (Phase 13).
 
 - Per-dimension `Config.LowerBounds` and `Config.UpperBounds`. The scalar `LowerBound` and
   `UpperBound` still work and broadcast to every coordinate when the slices are nil.

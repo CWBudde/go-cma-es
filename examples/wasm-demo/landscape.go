@@ -1,7 +1,6 @@
 package main
 
 import (
-	"math"
 	"sort"
 
 	"github.com/CWBudde/go-cma-es"
@@ -24,7 +23,7 @@ var landscapes = []landscapeSpec{
 		key: "rosenbrock", name: "Rosenbrock valley",
 		note:  "A narrow curved valley: the ellipse must rotate and contract while the mean follows the bend.",
 		lower: -2, upper: 2, initial: [2]float64{-1.3, 1.45}, sigma: 0.42,
-		minima: [][2]float64{{1, 1}}, objective: rosenbrock,
+		minima: [][2]float64{{1, 1}}, objective: cmaes.Rosenbrock,
 	},
 	{
 		key: "ellipsoid", name: "Rotated ellipsoid · condition 10⁶",
@@ -36,14 +35,14 @@ var landscapes = []landscapeSpec{
 		key: "rastrigin", name: "Rastrigin",
 		note:  "Many regular local basins expose why a single local run can need population restarts.",
 		lower: -5.12, upper: 5.12, initial: [2]float64{3.4, -3.1}, sigma: 1.25,
-		minima: [][2]float64{{0, 0}}, objective: rastrigin,
+		minima: [][2]float64{{0, 0}}, objective: cmaes.Rastrigin,
 	},
 	{
 		key: "himmelblau", name: "Himmelblau",
 		note:  "Four equal minima show how the initial distribution and seed choose a basin.",
 		lower: -5, upper: 5, initial: [2]float64{0, 0}, sigma: 1.45,
 		minima:    [][2]float64{{3, 2}, {-2.805118, 3.131312}, {-3.77931, -3.283186}, {3.584428, -1.848126}},
-		objective: himmelblau,
+		objective: cmaes.Himmelblau,
 	},
 }
 
@@ -57,13 +56,6 @@ func lookupLandscape(key string) (landscapeSpec, bool) {
 	return landscapeSpec{}, false
 }
 
-func rosenbrock(position []float64) float64 {
-	a := 1 - position[0]
-	b := position[1] - position[0]*position[0]
-
-	return a*a + 100*b*b
-}
-
 func conditionedEllipsoid(position []float64) float64 {
 	const inverseSqrtTwo = 0.70710678118654752440
 
@@ -71,23 +63,6 @@ func conditionedEllipsoid(position []float64) float64 {
 	across := (position[0] - position[1]) * inverseSqrtTwo
 
 	return along*along + 1e6*across*across
-}
-
-func rastrigin(position []float64) float64 {
-	result := 10 * float64(len(position))
-	for _, value := range position {
-		result += value*value - 10*math.Cos(2*math.Pi*value)
-	}
-
-	return result
-}
-
-func himmelblau(position []float64) float64 {
-	x, y := position[0], position[1]
-	a := x*x + y - 11
-	b := x + y*y - 7
-
-	return a*a + b*b
 }
 
 func rankNormalize(values []float32) []float32 {
