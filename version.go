@@ -12,4 +12,4 @@ package cmaes
 //
 // It is updated by hand as part of the release checklist, and `just
 // release-check` verifies that CHANGELOG.md carries a matching entry.
-const Version = "0.0.0-dev"
+const Version = "0.1.0"

@@ -13,6 +13,16 @@ refuse to resume across it.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.0] - 2026-08-26
+
+The first release. It carries everything built in Phases 0-10, 12 and 13: full-covariance,
+separable and block-diagonal CMA-ES, active negative weights, IPOP and BIPOP restarts,
+Hansen's boundary handling and stopping criteria, the WebAssembly demo, and the shared
+benchmark function suite. `PLAN.md` had scoped block-diagonal covariance to a later
+`v0.2.0`; since nothing shipped before now, it lands here instead.
+
 ### Added
 
 - Repository scaffolding: module `github.com/CWBudde/go-cma-es`, package `cmaes`, the
@@ -74,10 +84,10 @@ refuse to resume across it.
 
 ### Changed
 
-All of the following alter the search trajectory. A given seed no longer reproduces a run
-from an earlier revision, so under this project's rule they are breaking changes for
-reproducibility. `Version` stays at `0.0.0-dev` because nothing has been released yet;
-the first release must carry a `Version` that postdates them.
+All of the following alter the search trajectory relative to an untagged pre-release
+revision. Because `0.1.0` is the first release, there is no earlier `Version` to compare a
+seed against: a consumer's checkpoint guard has nothing to refuse a resume across until
+the next release changes the update rules.
 
 - Covariance adaptation learns from the **sampled** step rather than the boundary-repaired
   one, for the rank-µ terms and the active negative weights alike, in both the full and
@@ -136,4 +146,5 @@ the first release must carry a `Version` that postdates them.
 - The coverage gate no longer conflates "no statements to cover" with "0% covered";
   `go tool cover -func` reports 0.0% for both.
 
-[Unreleased]: https://github.com/CWBudde/go-cma-es/commits/main
+[Unreleased]: https://github.com/CWBudde/go-cma-es/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/CWBudde/go-cma-es/releases/tag/v0.1.0

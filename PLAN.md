@@ -5,7 +5,7 @@ Package: `cmaes` (flat, at the repository root)
 Status: **Phases 0–10, 12 and 13 complete.** Full, separable, and block-diagonal CMA-ES,
 active covariance adaptation, boundary handling, nonlinear constraints, convergence
 criteria, lifecycle observers, IPOP/BIPOP restarts, the WebAssembly showcase, and the
-shared benchmark function suite are implemented. Nothing is released.
+shared benchmark function suite are implemented. Released as `v0.1.0`.
 
 This document is the roadmap and the single source of truth for progress. It is organised
 the same way as the sibling [Mayfly](https://github.com/cwbudde/mayfly) and
@@ -76,10 +76,13 @@ the conventions.
 
 ### Scope
 
-| Release  | Contents                                                                      |
-| -------- | ----------------------------------------------------------------------------- |
-| `v0.1.0` | full-covariance CMA-ES, active (negative) weights, sep-CMA-ES, IPOP and BIPOP |
-| `v0.2.0` | block-diagonal covariance                                                     |
+| Release  | Contents                                                                                             |
+| -------- | ---------------------------------------------------------------------------------------------------- |
+| `v0.1.0` | full-covariance CMA-ES, active (negative) weights, sep-CMA-ES, IPOP and BIPOP, block-diagonal covariance |
+| `v0.2.0` | unallocated                                                                                          |
+
+Block-diagonal covariance was planned for `v0.2.0`, but nothing was tagged before it
+landed, so the first release carries it too.
 
 ---
 
