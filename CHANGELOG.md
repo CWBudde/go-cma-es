@@ -37,9 +37,12 @@ the guard can see it.
 
   `cmu` is now bounded by `maxRankMuShare * (1 - c1)` instead, which keeps a strictly
   positive decay and therefore a usable active budget. `deriveNegativeWeights` also
-  returns nil rather than a slice of zeros when a caller-supplied `c1` or `Lambda` still
-  exhausts the budget, so the passive and un-honourable-active paths are the same
-  parameters rather than merely the same arithmetic.
+  returns nil rather than a slice of zeros should the budget ever be exhausted anyway,
+  so the passive and un-honourable-active paths are the same parameters rather than
+  merely the same arithmetic. That is a guard on the helper's own contract, not on a
+  reachable configuration: with the bound in place the budget is at least
+  `0.1 * (1 - c1)` for every input, so no combination of `ProblemSize`, `Mu` and
+  `Lambda` can drive the derived `c1` and `cmu` onto the boundary any more.
 
   The defect was found in a downstream measurement campaign, where an arm that disabled
   `ActiveCMA` returned costs bit-identical to its control in all twelve paired blocks.
@@ -185,5 +188,6 @@ the next release changes the update rules.
 - The coverage gate no longer conflates "no statements to cover" with "0% covered";
   `go tool cover -func` reports 0.0% for both.
 
-[Unreleased]: https://github.com/CWBudde/go-cma-es/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/CWBudde/go-cma-es/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/CWBudde/go-cma-es/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/CWBudde/go-cma-es/releases/tag/v0.1.0

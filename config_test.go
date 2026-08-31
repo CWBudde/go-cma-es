@@ -760,6 +760,14 @@ func TestCovarianceDecayIsAlwaysPositive(t *testing.T) {
 					t.Errorf("n=%d lambda=%d mode=%s: covariance decay = %.17g, want > 0",
 						problemSize, lambda, mode, decay)
 				}
+
+				// The same slack is Hansen's positive-definiteness budget, so
+				// bounding cmu also puts deriveNegativeWeights' non-positive-mass
+				// branch out of reach. active.go says so; this pins it.
+				if mass := -sumFloats(got.negativeWeights); mass <= 0 {
+					t.Errorf("n=%d lambda=%d mode=%s: negative weight mass = %.17g, want > 0",
+						problemSize, lambda, mode, mass)
+				}
 			}
 		}
 	}

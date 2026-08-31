@@ -49,9 +49,15 @@ func deriveNegativeWeights(
 	// convex combination and no negative update can preserve positive
 	// definiteness. Report that as "no active weights" rather than as a slice
 	// of zeros, so the passive and unhonourable-active paths are the same
-	// parameters rather than merely the same arithmetic. maxRankMuShare keeps
-	// a derived configuration off this branch; a caller-supplied c1 or Lambda
-	// can still reach it.
+	// parameters rather than merely the same arithmetic.
+	//
+	// deriveStrategyParameters cannot reach this branch: the positive weights
+	// sum to one and maxRankMuShare holds cmu at or below 0.9*(1-c1), which
+	// leaves the numerator above at 0.1*(1-c1) or more for every input. c1 and
+	// cmu are both derived, so no configuration reaches it either. The guard
+	// covers this helper's own signature, which takes c1 and cmu as arguments
+	// and would otherwise return a slice of zeros -- the exact silent failure
+	// this function was fixed for.
 	if negativeMass <= 0 {
 		return nil
 	}
