@@ -45,6 +45,17 @@ func deriveNegativeWeights(
 		(float64(config.ProblemSize) * cmu)
 	negativeMass = math.Min(negativeMass, positiveDefiniteMass)
 
+	// A non-positive budget means the rank-mu rate has consumed the whole
+	// convex combination and no negative update can preserve positive
+	// definiteness. Report that as "no active weights" rather than as a slice
+	// of zeros, so the passive and unhonourable-active paths are the same
+	// parameters rather than merely the same arithmetic. maxRankMuShare keeps
+	// a derived configuration off this branch; a caller-supplied c1 or Lambda
+	// can still reach it.
+	if negativeMass <= 0 {
+		return nil
+	}
+
 	for index := range weights {
 		weights[index] *= negativeMass / sum
 	}

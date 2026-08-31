@@ -2,6 +2,7 @@ package cmaes
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 )
 
@@ -278,4 +279,54 @@ func matricesEqual(left, right [][]float64) bool {
 	}
 
 	return true
+}
+
+// TestActiveCMAIsHonouredInSeparableMode is the regression test for the defect
+// that ActiveCMA was silently inert in separable mode.
+//
+// It was found in a consumer's measurement campaign, not in a unit test: an arm
+// configured with ActiveCMA disabled returned costs bit-identical to its control
+// in all twelve paired blocks. The cause was upstream of the active weights.
+// The separable correction drove cmu onto its old 1-c1 ceiling, and Hansen's
+// positive-definiteness guard (1 - c1 - cmu)/(n*cmu) is exactly zero there, so
+// every negative weight was scaled to zero and the run was passive whatever the
+// caller asked for.
+func TestActiveCMAIsHonouredInSeparableMode(t *testing.T) {
+	// The consumer's shape: 56 parameters, a population far above Hansen's
+	// default, separable covariance on a unit box.
+	newConfig := func(active bool) *Config {
+		config := NewDefaultConfig(56)
+		config.CovarianceMode = CovarianceSeparable
+		config.Lambda = 1024
+		config.Mu = 512
+		config.LowerBound = 0
+		config.UpperBound = 1
+		config.MaxIterations = 12
+		config.ActiveCMA = active
+		config.ObjectiveFunc = Sphere
+
+		return config
+	}
+
+	parameters := deriveStrategyParameters(newConfig(true))
+
+	if mass := -sumFloats(parameters.negativeWeights); mass <= 0 {
+		t.Fatalf("negative weight mass = %.17g, want > 0", mass)
+	}
+
+	run := func(active bool) float64 {
+		config := newConfig(active)
+		config.Rand = rand.New(rand.NewSource(4242))
+
+		result, err := Optimize(config)
+		if err != nil {
+			t.Fatalf("optimize (active=%t): %v", active, err)
+		}
+
+		return result.GlobalBest.Cost
+	}
+
+	if active, passive := run(true), run(false); active == passive {
+		t.Errorf("ActiveCMA made no difference: both runs returned %.17g", active)
+	}
 }

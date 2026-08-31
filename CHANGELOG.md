@@ -15,6 +15,45 @@ refuse to resume across it.
 
 Nothing yet.
 
+## [0.2.0] - 2026-08-31
+
+**This release changes the update rules, so a given seed no longer reproduces the run
+0.1.0 described.** A consumer's checkpoint guard must refuse to resume across it. The
+change is confined to configurations that were previously degenerate — see below for
+exactly which — but it is a reproducibility break for those, and `Version` is bumped so
+the guard can see it.
+
+### Fixed
+
+- **`ActiveCMA` was silently ignored in separable and block covariance mode at large
+  populations.** The separable and block corrections multiply the rank-mu rate `cmu` by
+  `(n + 2)/(blockDimension + 2)`, and the result was clamped to `1 - c1`. A configuration
+  that reached that ceiling got a covariance decay of exactly zero, so `C` was rebuilt
+  from the current generation alone and remembered nothing from the ones before it —
+  a memoryless update, not merely an aggressive one. Hansen's positive-definiteness guard
+  on the active weights, `(1 - c1 - cmu)/(n * cmu)`, is the same expression, so it was
+  exactly zero too: every negative weight was scaled to nothing and the run was passive
+  no matter what the caller asked for, with no error and no diagnostic.
+
+  `cmu` is now bounded by `maxRankMuShare * (1 - c1)` instead, which keeps a strictly
+  positive decay and therefore a usable active budget. `deriveNegativeWeights` also
+  returns nil rather than a slice of zeros when a caller-supplied `c1` or `Lambda` still
+  exhausts the budget, so the passive and un-honourable-active paths are the same
+  parameters rather than merely the same arithmetic.
+
+  The defect was found in a downstream measurement campaign, where an arm that disabled
+  `ActiveCMA` returned costs bit-identical to its control in all twelve paired blocks.
+
+  **Which configurations change.** Only those whose corrected `cmu` would have exceeded
+  `maxRankMuShare * (1 - c1)`. That needs a `muEff` far above Hansen's default — a very
+  large `Lambda`, or the separable/block correction applied to an already large dense
+  rate. Every default configuration is unchanged in every covariance mode, which
+  `TestRankMuBoundLeavesPublishedRegimeUnchanged` pins across nine dimensions.
+  A run that was in the degenerate corner is not reproducible under 0.2.0 by any setting:
+  it was passive under 0.1.0 whatever it requested, but `cmu` has also moved off the
+  ceiling, so the trajectory differs even with `ActiveCMA` disabled. Re-measure such a
+  baseline rather than comparing across the versions.
+
 ## [0.1.0] - 2026-08-26
 
 The first release. It carries everything built in Phases 0-10, 12 and 13: full-covariance,

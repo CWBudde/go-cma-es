@@ -131,6 +131,34 @@ func defaultPopulationSize(problemSize int) int {
 	return 4 + int(math.Floor(3*math.Log(float64(problemSize))))
 }
 
+// maxRankMuShare bounds the rank-mu learning rate away from the convexity
+// boundary 1-c1, as a share of it.
+//
+// The covariance update is a convex combination whose decay factor is
+// 1 - c1 - cmu*sum(w). Clamping cmu to exactly 1-c1 drives that decay to
+// exactly zero: C is then rebuilt from the current generation alone, retaining
+// nothing from the ones before it. That is not an aggressive CMA-ES, it is a
+// memoryless one, and learning a metric across generations is the property this
+// library exists to provide.
+//
+// Hansen's positive-definiteness guard on the active weights,
+// alpha_posdef = (1 - c1 - cmu)/(n*cmu), is the same expression, so at that
+// boundary it is exactly zero too: every negative weight is scaled to nothing
+// and ActiveCMA becomes a silent no-op. Reserving a share of the budget fixes
+// both, because both are the same slack.
+//
+// The bound binds only where cmu would otherwise approach the boundary, which
+// needs a muEff far above Hansen's default -- either a very large Lambda, or
+// the separable and block corrections multiplying an already large dense rate
+// by (n+2)/(blockDimension+2). Configurations in the published regime are
+// unchanged; TestRankMuBoundLeavesPublishedRegimeUnchanged pins that.
+//
+// The specific share is a judgment call rather than a published constant: it is
+// the smallest reserve that keeps a comfortably conditioned active budget in
+// the regimes this library has been measured in. Ros and Hansen leave the
+// saturated case unspecified because their factor was not intended to reach it.
+const maxRankMuShare = 0.9
+
 func deriveStrategyParameters(config *Config) strategyParameters {
 	weights := make([]float64, config.Mu)
 	weightSum := 0.0
@@ -165,7 +193,7 @@ func deriveStrategyParameters(config *Config) strategyParameters {
 	cc := (4 + muEff/n) / (n + 4 + 2*muEff/n)
 	c1 := 2 / ((n+1.3)*(n+1.3) + muEff)
 
-	cmu := math.Min(1-c1, 2*(muEff-2+1/muEff)/((n+2)*(n+2)+muEff))
+	cmu := 2 * (muEff - 2 + 1/muEff) / ((n+2)*(n+2) + muEff)
 	blockDimension := covarianceBlockDimension(config)
 
 	if blockDimension < config.ProblemSize {
@@ -173,8 +201,10 @@ func deriveStrategyParameters(config *Config) strategyParameters {
 		// point of this factor. A bounded block has only blockDimension
 		// covariance directions to learn, so it need not retain the dense
 		// n-dimensional rank-mu rate.
-		cmu = math.Min(1-c1, cmu*(n+2)/float64(blockDimension+2))
+		cmu *= (n + 2) / float64(blockDimension+2)
 	}
+
+	cmu = math.Min(maxRankMuShare*(1-c1), cmu)
 
 	var negativeWeights []float64
 	if config.ActiveCMA {
