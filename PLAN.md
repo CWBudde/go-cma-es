@@ -76,10 +76,10 @@ the conventions.
 
 ### Scope
 
-| Release  | Contents                                                                                             |
-| -------- | ---------------------------------------------------------------------------------------------------- |
+| Release  | Contents                                                                                                 |
+| -------- | -------------------------------------------------------------------------------------------------------- |
 | `v0.1.0` | full-covariance CMA-ES, active (negative) weights, sep-CMA-ES, IPOP and BIPOP, block-diagonal covariance |
-| `v0.2.0` | unallocated                                                                                          |
+| `v0.2.0` | fix: `ActiveCMA` was silently inert wherever the rank-mu rate reached its ceiling                        |
 
 Block-diagonal covariance was planned for `v0.2.0`, but nothing was tagged before it
 landed, so the first release carries it too.

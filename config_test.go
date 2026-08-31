@@ -361,8 +361,9 @@ func TestDerivedStrategyParameterBranches(t *testing.T) {
 		gotFull := deriveStrategyParameters(full)
 		gotSeparable := deriveStrategyParameters(separable)
 
-		// sep-CMA-ES multiplies c_mu by (n + 2)/3, still clamped by 1 - c_1.
-		want := math.Min(1-gotFull.c1, gotFull.cmu*(10+2)/3)
+		// sep-CMA-ES multiplies c_mu by (n + 2)/3, still bounded by
+		// maxRankMuShare * (1 - c_1).
+		want := math.Min(maxRankMuShare*(1-gotFull.c1), gotFull.cmu*(10+2)/3)
 		assertFloatClose(t, "separable cmu", gotSeparable.cmu, want)
 
 		if gotSeparable.cmu <= gotFull.cmu {
@@ -370,21 +371,27 @@ func TestDerivedStrategyParameterBranches(t *testing.T) {
 		}
 	})
 
-	t.Run("cmu clamp binds", func(t *testing.T) {
+	t.Run("cmu bound binds", func(t *testing.T) {
 		// A large population on a one-dimensional problem drives the raw rank-mu
-		// rate towards 2, well above the 1 - c_1 ceiling.
+		// rate towards 2, well above the ceiling.
 		config := testConfig(1)
 		config.InitialMean = []float64{0}
 		config.Lambda = 100
 		config.Mu = 50
 
 		got := deriveStrategyParameters(config)
-		if rawCmu(1, got.muEff) <= 1-got.c1 {
-			t.Fatalf("raw cmu = %v does not exceed 1 - c1 = %v, so the clamp is untested",
-				rawCmu(1, got.muEff), 1-got.c1)
+		if rawCmu(1, got.muEff) <= maxRankMuShare*(1-got.c1) {
+			t.Fatalf("raw cmu = %v does not exceed the bound %v, so it is untested",
+				rawCmu(1, got.muEff), maxRankMuShare*(1-got.c1))
 		}
 
-		assertFloatClose(t, "clamped cmu", got.cmu, 1-got.c1)
+		assertFloatClose(t, "bounded cmu", got.cmu, maxRankMuShare*(1-got.c1))
+
+		// The bound exists so that the convex combination keeps a decay term.
+		// At the old 1 - c_1 ceiling this was exactly zero.
+		if decay := 1 - got.c1 - got.cmu; decay <= 0 {
+			t.Errorf("covariance decay = %v, want > 0", decay)
+		}
 	})
 
 	t.Run("one dimension", func(t *testing.T) {
@@ -694,6 +701,74 @@ func TestTerminationReasonValues(t *testing.T) {
 	for reason, want := range reasons {
 		if string(reason) != want {
 			t.Errorf("reason = %q, want %q", reason, want)
+		}
+	}
+}
+
+// TestRankMuBoundLeavesPublishedRegimeUnchanged pins the claim maxRankMuShare's
+// documentation makes: the bound is a guard on a degenerate corner, not a
+// change to the parameter set Hansen publishes. Every default configuration,
+// in every covariance mode, must derive the same rank-mu rate it derived before
+// the bound existed.
+func TestRankMuBoundLeavesPublishedRegimeUnchanged(t *testing.T) {
+	modes := []CovarianceMode{CovarianceFull, CovarianceSeparable, CovarianceBlock}
+
+	for _, problemSize := range []int{2, 3, 5, 10, 20, 40, 56, 100, 200} {
+		for _, mode := range modes {
+			config := NewDefaultConfig(problemSize)
+			config.CovarianceMode = mode
+			config.BlockSize = min(7, problemSize)
+
+			got := deriveStrategyParameters(config)
+
+			want := rawCmu(float64(problemSize), got.muEff)
+			if dimension := covarianceBlockDimension(config); dimension < problemSize {
+				want *= (float64(problemSize) + 2) / float64(dimension+2)
+			}
+
+			if want >= maxRankMuShare*(1-got.c1) {
+				t.Fatalf("n=%d mode=%s: the default configuration reaches the bound, "+
+					"so this test no longer proves the published regime is untouched",
+					problemSize, mode)
+			}
+
+			assertFloatClose(t,
+				fmt.Sprintf("cmu (n=%d, mode=%s)", problemSize, mode), got.cmu, want)
+		}
+	}
+}
+
+// TestCovarianceDecayIsAlwaysPositive is the invariant the bound exists to
+// protect. A decay of zero means the covariance is rebuilt from one generation
+// and remembers nothing, which is the failure this library was written to avoid.
+func TestCovarianceDecayIsAlwaysPositive(t *testing.T) {
+	modes := []CovarianceMode{CovarianceFull, CovarianceSeparable, CovarianceBlock}
+
+	for _, problemSize := range []int{1, 2, 10, 56} {
+		for _, lambda := range []int{8, 64, 1024, 8192} {
+			for _, mode := range modes {
+				config := NewDefaultConfig(problemSize)
+				config.CovarianceMode = mode
+				config.BlockSize = min(7, problemSize)
+				config.Lambda = lambda
+				config.Mu = lambda / 2
+
+				got := deriveStrategyParameters(config)
+
+				decay := covarianceDecay(got, true)
+				if decay <= 0 {
+					t.Errorf("n=%d lambda=%d mode=%s: covariance decay = %.17g, want > 0",
+						problemSize, lambda, mode, decay)
+				}
+
+				// The same slack is Hansen's positive-definiteness budget, so
+				// bounding cmu also puts deriveNegativeWeights' non-positive-mass
+				// branch out of reach. active.go says so; this pins it.
+				if mass := -sumFloats(got.negativeWeights); mass <= 0 {
+					t.Errorf("n=%d lambda=%d mode=%s: negative weight mass = %.17g, want > 0",
+						problemSize, lambda, mode, mass)
+				}
+			}
 		}
 	}
 }
